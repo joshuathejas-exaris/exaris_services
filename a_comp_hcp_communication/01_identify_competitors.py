@@ -279,6 +279,24 @@ def sanitize_indication(indication: str, competitors: list, client_drug: str) ->
     return "" if ind.lower() in banned else ind
 
 
+def resolve_indication(cf_indication, llm_indication, cf_source_used,
+                       competitors, client_drug):
+    """Pick the indication and record its provenance.
+
+    When a CF source is used, CONTENT_FRAME_SPEC row 1 is authoritative and the
+    LLM's guess is ignored entirely — this stops a hallucinated indication (e.g.
+    'Pathovy') from leaking in. Otherwise the (sanitised) LLM indication is used.
+    A drug-name collision or an empty value yields ('', 'none').
+
+    Returns (indication, indication_source) with source in {cf_spec, llm, none}.
+    """
+    if cf_source_used:
+        ind = sanitize_indication((cf_indication or "").strip(), competitors, client_drug)
+        return (ind, "cf_spec") if ind else ("", "none")
+    ind = sanitize_indication((llm_indication or "").strip(), competitors, client_drug)
+    return (ind, "llm") if ind else ("", "none")
+
+
 def normalise_competitors(client_drug: str, raw: List[dict]) -> List[dict]:
     """Clean, dedupe, and drop self-references from the LLM competitor list."""
     client_lower = client_drug.strip().lower()
@@ -358,11 +376,13 @@ def main() -> None:
     competitors = normalise_competitors(
         args.client_drug, result.get("competitors", [])
     )
-    # Prefer the CF indication; fall back to whatever the LLM inferred.
-    final_indication = indication or (result.get("indication") or "").strip()
-    # Guard against a drug name leaking in as the indication (e.g. 'Wegovy').
-    final_indication = sanitize_indication(
-        final_indication, competitors, args.client_drug
+    # A CF source makes CONTENT_FRAME_SPEC row 1 authoritative for the indication;
+    # only a knowledge-only run trusts the LLM's guess. Provenance is recorded so
+    # Stage 02 knows whether to trust the indication for query augmentation.
+    cf_source_used = bool(args.cf_data or args.from_snowflake)
+    final_indication, indication_source = resolve_indication(
+        indication, result.get("indication"), cf_source_used,
+        competitors, args.client_drug,
     )
 
     if not competitors:
@@ -370,14 +390,18 @@ def main() -> None:
 
     cf_count = sum(1 for c in competitors if c["source"] == "cf")
     log.info(
-        "Identified %d competitor(s) (%d from CF, %d from model knowledge).",
+        "Identified %d competitor(s) (%d from CF, %d from model knowledge). "
+        "Indication=%r (source=%s).",
         len(competitors),
         cf_count,
         len(competitors) - cf_count,
+        final_indication or "(none)",
+        indication_source,
     )
 
     output = {
         "indication": final_indication,
+        "indication_source": indication_source,
         "client_drug": args.client_drug,
         "competitors": competitors,
     }

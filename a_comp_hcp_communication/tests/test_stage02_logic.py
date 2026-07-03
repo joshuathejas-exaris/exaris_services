@@ -15,6 +15,28 @@ def test_build_query_strings():
     assert "Saxenda" in qs and "Liraglutid" in qs and "Saxenda Adipositas" in qs
 
 
+def test_build_query_strings_drops_augmented_when_no_indication():
+    c = {"brand_name": "Saxenda", "generic_name": "Liraglutid"}
+    qs = mod.build_query_strings(c, None)
+    assert qs == ["Saxenda", "Liraglutid"]
+
+
+def test_trusted_indication_cf_spec_is_used():
+    data = {"indication": "Adipositas", "indication_source": "cf_spec"}
+    assert mod.trusted_indication(data) == "Adipositas"
+
+
+def test_trusted_indication_llm_source_dropped():
+    data = {"indication": "Pathovy", "indication_source": "llm"}
+    assert mod.trusted_indication(data) is None
+
+
+def test_trusted_indication_legacy_no_source_key_trusts_value():
+    # Older competitors.json without the provenance key keeps prior behaviour.
+    data = {"indication": "Adipositas"}
+    assert mod.trusted_indication(data) == "Adipositas"
+
+
 def test_matches_keywords_hit():
     assert mod.matches_keywords("Gewichtsverlust, Saxenda, Abnehmen", "weight loss",
                                 ["Saxenda", "Liraglutid"])

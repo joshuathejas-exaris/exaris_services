@@ -56,6 +56,21 @@ def competitor_terms(competitor: dict) -> List[str]:
     return out
 
 
+def trusted_indication(competitors_data: dict) -> Optional[str]:
+    """Return the indication only if it is trustworthy for query augmentation.
+
+    A CF-spec-sourced indication is trusted; an LLM-guessed or absent one is not
+    (so we never embed a hallucinated '{brand} {indication}' query). For older
+    outputs that predate the indication_source key, fall back to trusting a
+    present value.
+    """
+    ind = (competitors_data.get("indication") or "").strip()
+    src = competitors_data.get("indication_source")
+    if src is not None and src != "cf_spec":
+        return None
+    return ind or None
+
+
 def build_query_strings(competitor: dict, indication: Optional[str]) -> List[str]:
     """brand, generic, and brand(+else generic) + indication — deduped."""
     terms = competitor_terms(competitor)
@@ -348,8 +363,13 @@ def main() -> None:
         return
     config = load_config()
     data = load_competitors()
-    indication = (data.get("indication") or "").strip() or None
+    # Only a CF-spec-sourced indication is trusted for query augmentation.
+    indication = trusted_indication(data)
     competitors = data.get("competitors", [])
+    if (data.get("indication") or "").strip() and indication is None:
+        log.info("Indication %r is untrusted (source=%s) — dropping the "
+                 "'{brand} {indication}' query.", data.get("indication"),
+                 data.get("indication_source"))
     if not competitors:
         _write([])
         return
