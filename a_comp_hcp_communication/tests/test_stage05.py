@@ -45,6 +45,10 @@ def test_cross_competitor_stats_counts_multi():
     assert s["multi_doctors"][0]["name"] == "Dr. A"
     assert s["multi_doctors"][0]["competitors"] == ["Mounjaro", "Saxenda"]
     assert s["mapped_doctors"] == 1 and s["unmapped_doctors"] == 1
+    # Reach: Saxenda has 2 distinct doctors, Mounjaro 1 → Saxenda leads.
+    assert s["competitor_reach"][0] == {"competitor": "Saxenda", "generic": "",
+                                        "n_doctors": 2}
+    assert s["competitor_reach"][1]["competitor"] == "Mounjaro"
 
 
 SYNTH = {"indication": "Adipositas", "client_drug": "Ozempic",
@@ -77,4 +81,5 @@ def test_reports_render_without_error():
     b = mod.build_report_b(SYNTH, "2026-07-03 12:00:00")
     assert "Competitor Intelligence Report" in a and "Saxenda (Liraglutid)" in a
     assert "Cross-Competitor Insights" in a and "Per-HCP Drill-Down" not in a
+    assert "Most discussed by distinct doctors" in a
     assert "Plain-Language Guide" in b

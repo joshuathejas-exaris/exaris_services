@@ -111,10 +111,17 @@ def cross_competitor_stats(claims: List[dict]) -> dict:
                            n_statements, competitors[], sentiments{label:count}}
       top_voices         — doctors with the most statements (any competitor count)
       mapped_doctors / unmapped_doctors — distinct-doctor counts by mapped flag
+      competitor_reach   — per competitor, distinct-doctor count, richest first:
+                           {competitor, generic, n_doctors}
     """
     doctors: Dict[str, dict] = {}
+    comp_doctors: Dict[str, set] = defaultdict(set)
+    comp_generic: Dict[str, str] = {}
     for c in claims:
         key = _hcp_key(c)
+        comp = c.get("competitor", "")
+        comp_doctors[comp].add(key)
+        comp_generic.setdefault(comp, c.get("generic", "") or "")
         d = doctors.setdefault(key, {
             "name": c.get("speaker_name") or "Unknown",
             "mapped": bool(c.get("mapped")),
@@ -123,11 +130,16 @@ def cross_competitor_stats(claims: List[dict]) -> dict:
             "n_statements": 0,
             "sentiments": defaultdict(int),
         })
-        d["competitors"].add(c.get("competitor", ""))
+        d["competitors"].add(comp)
         d["n_statements"] += 1
         d["sentiments"][c.get("sentiment", "")] += 1
         if c.get("speaker_name") and d["name"] == "Unknown":
             d["name"] = c["speaker_name"]
+
+    competitor_reach = sorted(
+        ({"competitor": comp, "generic": comp_generic.get(comp, ""),
+          "n_doctors": len(keys)} for comp, keys in comp_doctors.items() if comp),
+        key=lambda r: r["n_doctors"], reverse=True)
 
     packed = []
     for d in doctors.values():
@@ -147,6 +159,7 @@ def cross_competitor_stats(claims: List[dict]) -> dict:
         "top_voices": top_voices,
         "mapped_doctors": sum(1 for d in packed if d["mapped"]),
         "unmapped_doctors": sum(1 for d in packed if not d["mapped"]),
+        "competitor_reach": competitor_reach,
     }
 
 
@@ -394,6 +407,22 @@ def build_report_a(synthesis: dict, examples_per_section: int, timestamp: str) -
              f'<div class="kpi"><div class="n">{stats["unmapped_doctors"]}</div>'
              '<div class="l">Not-mapped doctors</div></div>'
              "</div>")
+
+    reach = stats["competitor_reach"]
+    p.append("<h3>Reach — distinct doctors per competitor</h3>")
+    if not reach:
+        p.append('<p class="muted">No competitors had grounded statements this run.</p>')
+    else:
+        top = reach[0]
+        p.append(f'<p>Most discussed by distinct doctors: '
+                 f'<strong>{esc(competitor_heading(top["competitor"], top["generic"]))}</strong> '
+                 f'— {top["n_doctors"]} doctor(s).</p>')
+        p.append('<div class="scroll"><table>')
+        p.append("<tr><th>Competitor</th><th>Distinct doctors</th></tr>")
+        for r in reach:
+            p.append(f"<tr><td>{esc(competitor_heading(r['competitor'], r['generic']))}</td>"
+                     f"<td>{r['n_doctors']}</td></tr>")
+        p.append("</table></div>")
 
     p.append("<h3>Doctors weighing in on multiple competitors</h3>")
     p.append('<p class="muted">Voices comparing several competitor drugs are the most '
