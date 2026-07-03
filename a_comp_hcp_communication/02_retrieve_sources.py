@@ -277,6 +277,7 @@ def process_competitor_track_a(cur, config, vectorizer, competitor, indication) 
         vec = vectorizer.get_vector_from_list([q])
         vlit = f"{vec.tolist()}::VECTOR(FLOAT, {EMBEDDING_DIM})"
         for row in _run_vector(cur, VECTOR_SQL_SCOPED, vec_literal=vlit, id_list=id_list,
+                               schema_final=sf["schema_final"],
                                min_similarity=rt.getfloat("min_similarity"),
                                top_chunks=rt.getint("top_chunks_per_wirkstoff")):
             wid = str(row["WEBSITE_ID"])
