@@ -99,7 +99,10 @@
           the brand/generic appears in <code>COL_KEYWORDS_ORIG/EN</code>.
           <span class="muted">(<code>IN_RELATION</code> is deliberately ignored — not reliable.)</span>
           → relevant pages + <strong>mapped HCPs</strong> (real records, <code>S_CUSTOMER_ID</code>).</li>
-        <li><strong>Vector search</strong> within those pages only → best ~100 passages per drug.</li>
+        <li><strong>Vector search</strong> within those gated pages only → best ~100 passages
+          per drug. <span class="muted">Searches the two website embedding tables
+          (<code>WEBSITES_VERTICAL_EMBEDDINGS_512</code>, <code>WEBSITES_EMBEDDINGS_512</code>);
+          PubMed is not searched here, as the gate is website-based.</span></li>
         <li><strong>Assemble</strong> the entire content of the matched documents.</li>
       </ol>
     </div>
@@ -107,7 +110,11 @@
       <h3><span class="tag llm">llm</span> Track B — no <code>LLM_VALIDATION</code></h3>
       <ol>
         <li><code>LLM_VALIDATION</code> offers nothing here, so it is skipped entirely.</li>
-        <li><strong>Vector search across the whole corpus</strong> for the drug → best ~100 passages.</li>
+        <li><strong>Vector search across the whole embedding corpus</strong> for the drug —
+          i.e. <em>all three</em> embedding tables: vertical websites
+          (<code>WEBSITES_VERTICAL_EMBEDDINGS_512</code>), public websites
+          (<code>WEBSITES_EMBEDDINGS_512</code>) and PubMed
+          (<code>PUBMED_EMBEDDINGS_512</code>) — with no page restriction → best ~100 passages.</li>
         <li><strong>Assemble</strong> the full documents.</li>
       </ol>
       <p class="muted" style="margin-top:10px;">No <code>LLM_VALIDATION</code> link means
@@ -163,10 +170,11 @@
         │                                         │
 Stage 2 · TRACK A                        Stage 2 · TRACK B
   LLM_VALIDATION gate                      (no LLM_VALIDATION)
-  NEAR_BY=1, IS_OLD=0, IS_DOCTOR=1,        global vector search
-  brand/generic in COL_KEYWORDS            → full documents
-  → pages + MAPPED HCPs                    → doctors all "not mapped"
-  → vector search within pages
+  NEAR_BY=1, IS_OLD=0, IS_DOCTOR=1,        vector search over ALL 3 embedding
+  brand/generic in COL_KEYWORDS            tables (vertical + public websites
+  → pages + MAPPED HCPs                    + PubMed), no page restriction
+  → vector search within gated pages       → full documents
+    (website tables only, no PubMed)        → doctors all "not mapped"
   → full documents
         └───────────────┬───────────────────────┘
                         │
