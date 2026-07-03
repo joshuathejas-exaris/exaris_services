@@ -87,6 +87,69 @@ def mapped_badge(mapped: bool) -> str:
     return '<span class="badge" style="background:#9333ea">not mapped</span>'
 
 
+def competitor_heading(competitor: str, generic: str) -> str:
+    """'Brand (Wirkstoff)' — or just the brand when no generic is known."""
+    competitor = (competitor or "").strip()
+    generic = (generic or "").strip()
+    if generic and generic.lower() != competitor.lower():
+        return f"{competitor} ({generic})"
+    return competitor
+
+
+def _hcp_key(claim: dict) -> str:
+    """Stable per-doctor key: customer id when mapped, else normalised name."""
+    return claim.get("s_customer_id") or f"name::{(claim.get('speaker_name') or '').strip().lower()}"
+
+
+def cross_competitor_stats(claims: List[dict]) -> dict:
+    """Aggregate per-doctor cross-competitor activity from the flat claim list.
+
+    Returns:
+      total_doctors      — distinct doctors with at least one grounded statement
+      n_multi            — how many of them discuss 2+ distinct competitors
+      multi_doctors      — those doctors, richest first: {name, mapped, s_customer_id,
+                           n_statements, competitors[], sentiments{label:count}}
+      top_voices         — doctors with the most statements (any competitor count)
+      mapped_doctors / unmapped_doctors — distinct-doctor counts by mapped flag
+    """
+    doctors: Dict[str, dict] = {}
+    for c in claims:
+        key = _hcp_key(c)
+        d = doctors.setdefault(key, {
+            "name": c.get("speaker_name") or "Unknown",
+            "mapped": bool(c.get("mapped")),
+            "s_customer_id": c.get("s_customer_id") or "",
+            "competitors": set(),
+            "n_statements": 0,
+            "sentiments": defaultdict(int),
+        })
+        d["competitors"].add(c.get("competitor", ""))
+        d["n_statements"] += 1
+        d["sentiments"][c.get("sentiment", "")] += 1
+        if c.get("speaker_name") and d["name"] == "Unknown":
+            d["name"] = c["speaker_name"]
+
+    packed = []
+    for d in doctors.values():
+        packed.append({
+            "name": d["name"], "mapped": d["mapped"], "s_customer_id": d["s_customer_id"],
+            "n_statements": d["n_statements"],
+            "competitors": sorted(x for x in d["competitors"] if x),
+            "sentiments": dict(d["sentiments"]),
+        })
+    multi = [d for d in packed if len(d["competitors"]) >= 2]
+    multi.sort(key=lambda d: (len(d["competitors"]), d["n_statements"]), reverse=True)
+    top_voices = sorted(packed, key=lambda d: d["n_statements"], reverse=True)
+    return {
+        "total_doctors": len(packed),
+        "n_multi": len(multi),
+        "multi_doctors": multi,
+        "top_voices": top_voices,
+        "mapped_doctors": sum(1 for d in packed if d["mapped"]),
+        "unmapped_doctors": sum(1 for d in packed if not d["mapped"]),
+    }
+
+
 # --------------------------------------------------------------------------- #
 # HTML helpers
 # --------------------------------------------------------------------------- #
@@ -297,7 +360,7 @@ def build_report_a(synthesis: dict, examples_per_section: int, timestamp: str) -
         competitor = cs.get("competitor", "")
         dist = (cs.get("distribution_split") or {}).get("all", {})
         market_view = (cs.get("market_view") or "").strip()
-        p.append(f"<h3>{esc(competitor)}</h3>")
+        p.append(f"<h3>{esc(competitor_heading(competitor, cs.get('generic', '')))}</h3>")
         p.append('<div class="card">')
         p.append(svg_distribution_chart(dist))
         if market_view:
@@ -317,40 +380,60 @@ def build_report_a(synthesis: dict, examples_per_section: int, timestamp: str) -
             p.append('<p class="muted">No grounded statements for this competitor.</p>')
         p.append("</div>")
 
-    p.append("<h2>3. Per-HCP Drill-Down</h2>")
-    p.append('<p class="muted">Every grounded statement per doctor, traceable to its '
-             "source document.</p>")
-    hcp_items = list(by_hcp.items())
-    shown_hcps, remaining_hcps = slice_examples(hcp_items, examples_per_section)
-    if not shown_hcps:
-        p.append('<p class="muted">No grounded statements available.</p>')
-    for _key, hcp_claims in shown_hcps:
-        name = next((c.get("speaker_name") for c in hcp_claims if c.get("speaker_name")),
-                    "Unknown")
-        mapped = bool(hcp_claims[0].get("mapped"))
-        cid = (hcp_claims[0].get("s_customer_id") or "").strip()
-        p.append('<div class="card">')
-        p.append(f'<div class="hcp-head"><strong>{esc(name)}</strong>'
-                 f"{mapped_badge(mapped)}"
-                 f'<span class="meta">{esc(cid)}</span></div>')
+    # 3. Cross-competitor insights — stats you cannot read off the per-competitor
+    # sections (the full per-doctor statement list lives in the Excel export).
+    stats = cross_competitor_stats(claims)
+    p.append("<h2>3. Cross-Competitor Insights</h2>")
+    p.append('<div class="kpis">'
+             f'<div class="kpi"><div class="n">{stats["total_doctors"]}</div>'
+             '<div class="l">Distinct doctors</div></div>'
+             f'<div class="kpi"><div class="n">{stats["n_multi"]}</div>'
+             '<div class="l">Discuss 2+ competitors</div></div>'
+             f'<div class="kpi"><div class="n">{stats["mapped_doctors"]}</div>'
+             '<div class="l">Mapped HCPs</div></div>'
+             f'<div class="kpi"><div class="n">{stats["unmapped_doctors"]}</div>'
+             '<div class="l">Not-mapped doctors</div></div>'
+             "</div>")
+
+    p.append("<h3>Doctors weighing in on multiple competitors</h3>")
+    p.append('<p class="muted">Voices comparing several competitor drugs are the most '
+             "commercially interesting — they signal where the market conversation "
+             "overlaps.</p>")
+    shown_multi, remaining_multi = slice_examples(stats["multi_doctors"], examples_per_section)
+    if not shown_multi:
+        p.append('<p class="muted">No doctor discussed more than one competitor in this run.</p>')
+    else:
         p.append('<div class="scroll"><table>')
-        p.append("<tr><th>Competitor</th><th>Sentiment</th><th>Confidence</th>"
-                 "<th>Verbatim quote</th><th>Source</th></tr>")
-        for c in hcp_claims:
-            quote = (c.get("verbatim_quote") or "").strip()
-            quote_cell = f"“{esc(quote)}”" if quote else '<span class="muted">—</span>'
-            src = link((c.get("citation") or {}).get("url", "")) or '<span class="muted">—</span>'
-            conf_cell = confidence_badge(c.get("confidence", "")) or '<span class="muted">—</span>'
-            p.append(f"<tr><td>{esc(c.get('competitor', ''))}</td>"
-                     f"<td>{label_badge(c.get('sentiment', ''))}</td>"
-                     f"<td>{conf_cell}</td>"
-                     f"<td>{quote_cell}</td>"
-                     f"<td>{src}</td></tr>")
+        p.append("<tr><th>Doctor</th><th></th><th>Competitors</th>"
+                 "<th># statements</th><th>Sentiment mix</th></tr>")
+        for d in shown_multi:
+            comps = ", ".join(esc(x) for x in d["competitors"])
+            senti = ", ".join(f"{k}:{v}" for k, v in d["sentiments"].items() if k)
+            cid = f' <span class="meta">{esc(d["s_customer_id"])}</span>' if d["s_customer_id"] else ""
+            p.append(f"<tr><td><strong>{esc(d['name'])}</strong>{cid}</td>"
+                     f"<td>{mapped_badge(d['mapped'])}</td>"
+                     f"<td>{comps} <span class='meta'>({len(d['competitors'])})</span></td>"
+                     f"<td>{d['n_statements']}</td>"
+                     f"<td>{esc(senti)}</td></tr>")
         p.append("</table></div>")
-        p.append("</div>")
-    if remaining_hcps > 0:
-        p.append(f'<p class="more">+ {remaining_hcps} more doctor(s) — see the Excel '
-                 "export for the full drill-down.</p>")
+        if remaining_multi > 0:
+            p.append(f'<p class="more">+ {remaining_multi} more multi-competitor doctor(s) '
+                     "— see the Excel export.</p>")
+
+    p.append("<h3>Most active voices</h3>")
+    p.append('<p class="muted">Doctors with the most grounded statements this run.</p>')
+    top = [d for d in stats["top_voices"] if d["n_statements"] > 1][:10]
+    if not top:
+        p.append('<p class="muted">No doctor made more than one grounded statement.</p>')
+    else:
+        p.append('<div class="scroll"><table>')
+        p.append("<tr><th>Doctor</th><th></th><th># statements</th><th>Competitors covered</th></tr>")
+        for d in top:
+            p.append(f"<tr><td><strong>{esc(d['name'])}</strong></td>"
+                     f"<td>{mapped_badge(d['mapped'])}</td>"
+                     f"<td>{d['n_statements']}</td>"
+                     f"<td>{len(d['competitors'])}</td></tr>")
+        p.append("</table></div>")
 
     p.append("<h2>4. Methodology</h2>")
     p.append("<p>Doctors were included only where a database gate confirmed a genuine "
@@ -574,8 +657,9 @@ def write_excel(synthesis, path):
     wb = Workbook()
     ws = wb.active
     ws.title = "Grounded Claims"
-    headers = ["HCP/Speaker", "Mapped", "S_CUSTOMER_ID", "Competitor", "Sentiment",
-               "Confidence", "Statement", "Verbatim Quote", "Source URL", "Verified"]
+    headers = ["HCP/Speaker", "Mapped", "S_CUSTOMER_ID", "Competitor", "Wirkstoff",
+               "Sentiment", "Confidence", "Statement", "Verbatim Quote", "Source URL",
+               "Verified"]
     ws.append(headers)
     hf = Font(bold=True, color="FFFFFF")
     fill = PatternFill("solid", fgColor="37474F")
@@ -585,10 +669,11 @@ def write_excel(synthesis, path):
     for c in synthesis.get("claims", []):
         cit = c.get("citation", {}) or {}
         ws.append([c.get("speaker_name", ""), "yes" if c.get("mapped") else "no",
-                   c.get("s_customer_id", ""), c.get("competitor", ""), c.get("sentiment", ""),
-                   c.get("confidence", ""), c.get("statement", ""), c.get("verbatim_quote", ""),
-                   cit.get("url", ""), "yes" if c.get("verified") else "no"])
-    for i, w in enumerate([22, 8, 16, 16, 12, 12, 40, 60, 40, 9], 1):
+                   c.get("s_customer_id", ""), c.get("competitor", ""), c.get("generic", ""),
+                   c.get("sentiment", ""), c.get("confidence", ""), c.get("statement", ""),
+                   c.get("verbatim_quote", ""), cit.get("url", ""),
+                   "yes" if c.get("verified") else "no"])
+    for i, w in enumerate([22, 8, 16, 16, 16, 12, 12, 40, 60, 40, 9], 1):
         ws.column_dimensions[get_column_letter(i)].width = w
     wrap = Alignment(vertical="top", wrap_text=True)
     for row in ws.iter_rows(min_row=2):

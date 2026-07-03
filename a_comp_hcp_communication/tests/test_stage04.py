@@ -22,6 +22,7 @@ def test_distribution_split_counts_mapped_and_unmapped():
     assert d["all"]["positive"] == 1 and d["all"]["negative"] == 1
 
 
-def test_flatten_claims_adds_competitor():
+def test_flatten_claims_adds_competitor_and_generic():
     flat = mod.flatten_claims(GRAPH)
     assert len(flat) == 2 and all(c["competitor"] == "Saxenda" for c in flat)
+    assert all(c["generic"] == "Liraglutid" for c in flat)

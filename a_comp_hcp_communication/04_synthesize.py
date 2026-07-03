@@ -50,12 +50,13 @@ def distribution_split(claims: List[dict]) -> dict:
 
 
 def flatten_claims(graph: dict) -> List[dict]:
-    """One flat list of claims across competitors, each tagged with its competitor."""
+    """One flat list of claims across competitors, each tagged competitor + generic."""
     flat = []
     for comp in graph.get("competitors", []):
         for c in comp.get("claims", []):
             d = dict(c)
             d["competitor"] = comp.get("competitor", "")
+            d["generic"] = comp.get("generic", "")
             flat.append(d)
     return flat
 
@@ -149,6 +150,7 @@ def main() -> None:
             except Exception as err:  # noqa: BLE001
                 log.error("market_view failed for %s: %s", comp["competitor"], err)
         summaries.append({"competitor": comp["competitor"],
+                          "generic": comp.get("generic", ""),
                           "distribution_split": dist, "market_view": market_view})
 
     overall = ""
