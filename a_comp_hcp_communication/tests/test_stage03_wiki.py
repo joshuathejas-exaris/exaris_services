@@ -28,6 +28,18 @@ def test_build_competitor_graph_nodes_and_claims():
     assert g["claims"][0]["verified"] is True
 
 
+def test_ingest_prompt_excludes_coi_and_defines_sentiment():
+    p = mod.build_ingest_prompt("Saxenda", "Liraglutid", BLOCK["sources"][0])
+    low = p.lower()
+    # COI exclusion present
+    assert "advisory board" in low
+    assert "honorar" in low or "honoraria" in low
+    assert "aktien" in low or "shares" in low or "stock" in low
+    # sentiment rubric defines negative as covering drawbacks
+    assert "drawback" in low or "side-effect" in low or "side effect" in low
+    assert "never invent" in low or "invent" in low
+
+
 def test_write_wiki_tree_creates_files(tmp_path):
     claims = [{"speaker_name": "Michael Holznagel", "s_customer_id": "c1", "mapped": True,
                "wirkstoff": "Saxenda", "verbatim_quote": "Saxenda wirkt gut", "statement": "x",

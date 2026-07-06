@@ -114,6 +114,27 @@ is mentioned elsewhere, and that doctor does not actually say anything about the
 drug, DO NOT extract it. Do not infer, translate, or invent. Every "verbatim_quote" \
 must be copied character-for-character from the document, in its original language.
 
+EXCLUDE (never extract), even when a named doctor says them:
+- Conflict-of-interest / financial-disclosure statements: research funding or grants, \
+stock or share ownership, advisory-board membership, consulting fees, speaker \
+honoraria, and case/study payments or other financial ties to a manufacturer \
+(e.g. "Ich erhalte Forschungsgelder von ...", "Ich halte Aktien ...", "war Mitglied \
+im Advisory Board", "Speaker Honoraria", "Case payments").
+Extract only statements expressing a view or clinical claim ABOUT the drug itself — \
+efficacy, safety/tolerability, dosing, mechanism, positioning, patient experience, or \
+comparison with other drugs.
+
+Assign "sentiment" by the doctor's stance TOWARD the drug:
+- "positive" — favourable: efficacy, benefit, endorsement, good tolerability.
+- "negative" — unfavourable OR reports a material drawback: significant side-effect \
+burden, safety risk, cost concern, efficacy limitation, weight regain, need for \
+lifelong therapy, muscle-mass loss, or an explicitly critical view.
+- "ambivalent" — names a benefit AND a drawback together.
+- "neutral" — purely descriptive/factual with no benefit or drawback implied \
+(e.g. approval status, dosing schedule, mechanism, brand/generic identity).
+Judge only from the quote; never invent a stance the text does not support. Extract \
+critical statements with the SAME fidelity as positive ones.
+
 Document (source_url: {source.get('url') or '(none)'}):
 \"\"\"
 {source.get('full_text', '')}
