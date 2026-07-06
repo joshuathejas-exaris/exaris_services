@@ -300,16 +300,24 @@ footer { margin-top: 48px; padding-top: 16px; border-top: 1px solid #e5e9ee;
 ul, ol { margin: 8px 0; padding-left: 22px; }
 li { margin: 4px 0; }
 .hcp-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
-.tabs { display: flex; flex-wrap: wrap; gap: 4px; border-bottom: 2px solid #e5e9ee;
-        margin: 24px 0 8px; }
-.tab { padding: 8px 14px; border: 1px solid transparent; border-bottom: none;
-       border-radius: 8px 8px 0 0; background: transparent; color: #6b7280;
-       font-size: 14px; font-weight: 600; cursor: pointer; text-decoration: none; }
-.tab:hover { color: #1565c0; }
-.tab.active { background: #fcfdfe; border-color: #e5e9ee; color: #1565c0;
-              margin-bottom: -2px; }
+.layout { display: flex; gap: 28px; align-items: flex-start; margin: 24px 0 8px; }
+.sidebar { flex: 0 0 220px; position: sticky; top: 16px; align-self: flex-start; }
+.content { flex: 1 1 auto; min-width: 0; }
+.nav-group-label { text-transform: uppercase; letter-spacing: .6px; font-size: 11px;
+                   font-weight: 700; color: #9aa5b1; margin: 18px 0 6px; }
+.nav-group-label:first-child { margin-top: 0; }
+.nav-item { display: block; padding: 6px 10px; margin: 2px 0; border-radius: 6px;
+            color: #374151; font-size: 14px; text-decoration: none;
+            border-left: 3px solid transparent; }
+.nav-item:hover { background: #f3f6f9; color: #1565c0; }
+.nav-item.active { background: #eef4fb; color: #1565c0; font-weight: 600;
+                   border-left-color: #1565c0; }
 body.js-tabs .panel { display: none; }
 body.js-tabs .panel.active { display: block; }
+@media (max-width: 720px) {
+  .layout { flex-direction: column; gap: 8px; }
+  .sidebar { position: static; flex-basis: auto; width: 100%; }
+}
 """
 
 TAB_SCRIPT = """
@@ -317,8 +325,13 @@ TAB_SCRIPT = """
 function showTab(id){
   var ps = document.querySelectorAll('.panel');
   for (var i = 0; i < ps.length; i++){ ps[i].classList.toggle('active', ps[i].id === id); }
-  var ts = document.querySelectorAll('.tab');
-  for (var j = 0; j < ts.length; j++){ ts[j].classList.toggle('active', ts[j].getAttribute('href') === '#' + id); }
+  var ns = document.querySelectorAll('.nav-item');
+  for (var j = 0; j < ns.length; j++){
+    var on = ns[j].getAttribute('href') === '#' + id;
+    ns[j].classList.toggle('active', on);
+    if (on) { ns[j].setAttribute('aria-current', 'page'); }
+    else { ns[j].removeAttribute('aria-current'); }
+  }
   return false;
 }
 document.addEventListener('DOMContentLoaded', function(){
@@ -330,21 +343,32 @@ document.addEventListener('DOMContentLoaded', function(){
 """
 
 
-def _render_tabs(sections: "List[Tuple[str, str]]") -> str:
-    """sections: list of (label, panel_html). First is active on load. Degrades to a
-    full-scroll page when JS is disabled (no panel is hidden by default CSS)."""
-    nav = ['<div class="tabs" role="tablist">']
+def _render_sidebar(groups: "List[Tuple[str, List[Tuple[str, str]]]]") -> str:
+    """groups: list of (group_header, [(item_label, panel_html), ...]).
+
+    Renders a left nav sidebar (grouped, non-clickable headers) beside a content pane
+    of panels. The first item overall is active on load. Degrades to a full-scroll page
+    when JS is disabled (no panel is hidden by default CSS). Empty groups are skipped."""
+    nav = ['<nav class="sidebar" role="tablist" aria-label="Report sections">']
     panels = []
-    for i, (label, body) in enumerate(sections):
-        tid = tab_id(label)
-        active = " active" if i == 0 else ""
-        nav.append(f'<a class="tab{active}" role="tab" id="{tid}-btn" href="#{tid}" '
-                   f'aria-controls="{tid}" onclick="return showTab(\'{tid}\')">'
-                   f"{esc(label)}</a>")
-        panels.append(f'<section class="panel{active}" role="tabpanel" id="{tid}" '
-                      f'aria-labelledby="{tid}-btn">\n{body}\n</section>')
-    nav.append("</div>")
-    return "\n".join(nav) + "\n" + "\n".join(panels)
+    first = True
+    for group_label, items in groups:
+        if not items:
+            continue
+        nav.append(f'<div class="nav-group-label">{esc(group_label)}</div>')
+        for item_label, body in items:
+            tid = tab_id(item_label)
+            active = " active" if first else ""
+            current = ' aria-current="page"' if first else ""
+            nav.append(f'<a class="nav-item{active}" role="tab" id="{tid}-btn" '
+                       f'href="#{tid}" aria-controls="{tid}"{current} '
+                       f'onclick="return showTab(\'{tid}\')">{esc(item_label)}</a>')
+            panels.append(f'<section class="panel{active}" role="tabpanel" id="{tid}" '
+                          f'aria-labelledby="{tid}-btn">\n{body}\n</section>')
+            first = False
+    nav.append("</nav>")
+    content = '<main class="content">\n' + "\n".join(panels) + "\n</main>"
+    return '<div class="layout">\n' + "\n".join(nav) + "\n" + content + "\n</div>"
 
 
 def html_document(title: str, body: str) -> str:
@@ -590,17 +614,23 @@ def build_report_a(synthesis: dict, examples_per_section: int, timestamp: str) -
                 f"known HCP customer record · {mapped_badge(False)} a doctor genuinely "
                 "quoted in a source but not in our HCP records.</p>")
 
-    # Tabs
-    sections: "List[Tuple[str, str]]" = [
-        ("Insgesamt", _panel_overview(summaries, claims, overall, stats, dist_by_comp))]
+    # Sidebar-grouped sections: OVERVIEW / BY COMPETITOR / ACROSS ALL DRUGS / ABOUT
+    competitor_items = []
     for cs in summaries:
         label = competitor_heading(cs.get("competitor", ""), cs.get("generic", ""))
-        sections.append((label, _panel_competitor(cs, by_comp, dist_by_comp, examples_per_section)))
-    sections.append(("Doctors weighing", _panel_multi(stats, examples_per_section)))
-    sections.append(("Most active voices", _panel_top_voices(stats)))
-    sections.append(("Methodology", _panel_methodology()))
+        competitor_items.append(
+            (label, _panel_competitor(cs, by_comp, dist_by_comp, examples_per_section)))
+    groups: "List[Tuple[str, List[Tuple[str, str]]]]" = [
+        ("OVERVIEW", [("Insgesamt",
+                       _panel_overview(summaries, claims, overall, stats, dist_by_comp))]),
+        ("BY COMPETITOR", competitor_items),
+        ("ACROSS ALL DRUGS", [
+            ("Doctors weighing", _panel_multi(stats, examples_per_section)),
+            ("Most active voices", _panel_top_voices(stats))]),
+        ("ABOUT", [("Methodology", _panel_methodology())]),
+    ]
 
-    body = "\n".join(head) + "\n" + _render_tabs(sections) + "\n" + TAB_SCRIPT + "\n" \
+    body = "\n".join(head) + "\n" + _render_sidebar(groups) + "\n" + TAB_SCRIPT + "\n" \
         + footer_html(timestamp)
     return html_document("Competitor Intelligence Report", body)
 
