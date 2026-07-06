@@ -100,14 +100,37 @@ def test_visible_claims_drops_coi():
 
 
 def test_overall_distribution_sums_across_competitors():
-    summaries = [
-        {"distribution_split": {"all": {"positive": 2, "neutral": 1,
-                                        "negative": 0, "ambivalent": 0}}},
-        {"distribution_split": {"all": {"positive": 3, "neutral": 0,
-                                        "negative": 1, "ambivalent": 2}}},
-    ]
-    assert mod.overall_distribution(summaries) == {
+    dist_by_comp = {
+        "A": {"positive": 2, "neutral": 1, "negative": 0, "ambivalent": 0},
+        "B": {"positive": 3, "neutral": 0, "negative": 1, "ambivalent": 2},
+    }
+    assert mod.overall_distribution(dist_by_comp) == {
         "positive": 5, "neutral": 1, "negative": 1, "ambivalent": 2}
+
+
+def test_competitor_distributions_from_claims():
+    claims = [
+        {"competitor": "Saxenda", "sentiment": "positive"},
+        {"competitor": "Saxenda", "sentiment": "negative"},
+        {"competitor": "Mounjaro", "sentiment": "neutral"},
+    ]
+    d = mod.competitor_distributions(claims)
+    assert d["Saxenda"] == {"positive": 1, "neutral": 0, "negative": 1, "ambivalent": 0}
+    assert d["Mounjaro"]["neutral"] == 1
+
+
+def test_overview_table_reflects_filtered_not_summaries():
+    # summaries say Wegovy neutral=1, but the only visible claim is positive.
+    summaries = [{"competitor": "Wegovy", "generic": "Semaglutid",
+                  "distribution_split": {"all": {"positive": 1, "neutral": 1,
+                                                 "negative": 0, "ambivalent": 0}}}]
+    claims = [{"competitor": "Wegovy", "sentiment": "positive"}]
+    dist_by_comp = mod.competitor_distributions(claims)
+    stats = mod.cross_competitor_stats(claims)
+    html = mod._panel_overview(summaries, claims, "summary", stats, dist_by_comp)
+    # Wegovy row must be pos1 neu0 neg0 amb0 (from filtered claims), NOT pos1 neu1 (summaries)
+    assert "<td>1</td><td>0</td><td>0</td><td>0</td>" in html
+    assert "<td>1</td><td>1</td>" not in html
 
 
 def test_tab_id_slugifies():

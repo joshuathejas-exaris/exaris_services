@@ -40,7 +40,8 @@ _CLINICAL_SIGNAL = re.compile(
     r"dosier|dosis|dosing|"
     r"übelkeit|erbrechen|durchfall|muskel|"
     r"reduktion|reduzier|verbesser|improve|"
-    r"empfehl|prescrib|verordn",
+    r"empfehl|prescrib|verordn|"
+    r"mechanism|mechanismus|kosten|teuer|expensive|price|positionier|positioning",
     re.IGNORECASE,
 )
 

@@ -68,3 +68,9 @@ def test_coi_plain_clinical_statement_not_flagged():
 
 def test_coi_empty_not_flagged():
     assert pc.is_coi_disclosure("", "") is False
+
+
+def test_coi_kept_when_cost_claim_present():
+    # discloses honoraria but also states a cost view about the drug -> keep (conservative)
+    assert pc.is_coi_disclosure(
+        "Ich erhalte Honorare von Novo Nordisk. Mounjaro ist relativ teuer.") is False

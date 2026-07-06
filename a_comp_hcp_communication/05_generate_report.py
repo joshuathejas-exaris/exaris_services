@@ -166,11 +166,22 @@ def cross_competitor_stats(claims: List[dict]) -> dict:
     }
 
 
-def overall_distribution(summaries: List[dict]) -> Dict[str, int]:
-    """Aggregate sentiment counts across all competitor summaries (the 'all' split)."""
+def competitor_distributions(claims: List[dict]) -> Dict[str, Dict[str, int]]:
+    """Per-competitor sentiment counts computed from the (already COI-filtered) claims."""
+    out: Dict[str, Dict[str, int]] = {}
+    for c in claims:
+        comp = c.get("competitor", "")
+        d = out.setdefault(comp, {s: 0 for s in SENTIMENT_LABELS})
+        s = c.get("sentiment")
+        if s in d:
+            d[s] += 1
+    return out
+
+
+def overall_distribution(dist_by_comp: Dict[str, Dict[str, int]]) -> Dict[str, int]:
+    """Aggregate sentiment counts across all competitors' (filtered) distributions."""
     total = {s: 0 for s in SENTIMENT_LABELS}
-    for cs in summaries:
-        d = (cs.get("distribution_split") or {}).get("all", {})
+    for d in dist_by_comp.values():
         for s in SENTIMENT_LABELS:
             total[s] += int(d.get(s, 0) or 0)
     return total
@@ -405,14 +416,16 @@ def _claim_example_html(c: dict) -> str:
 # --------------------------------------------------------------------------- #
 # Report A — Competitor Intelligence
 # --------------------------------------------------------------------------- #
-def _overview_sentiment_table(summaries: List[dict]) -> str:
+def _overview_sentiment_table(summaries: List[dict],
+                              dist_by_comp: Dict[str, Dict[str, int]]) -> str:
     rows = ['<div class="scroll"><table>',
             "<tr><th>Competitor</th><th>positive</th><th>neutral</th>"
             "<th>negative</th><th>ambivalent</th></tr>"]
     for cs in summaries:
-        d = (cs.get("distribution_split") or {}).get("all", {})
+        comp = cs.get("competitor", "")
+        d = dist_by_comp.get(comp, {})
         rows.append(
-            f"<tr><td>{esc(competitor_heading(cs.get('competitor', ''), cs.get('generic', '')))}</td>"
+            f"<tr><td>{esc(competitor_heading(comp, cs.get('generic', '')))}</td>"
             f"<td>{int(d.get('positive', 0) or 0)}</td>"
             f"<td>{int(d.get('neutral', 0) or 0)}</td>"
             f"<td>{int(d.get('negative', 0) or 0)}</td>"
@@ -421,7 +434,7 @@ def _overview_sentiment_table(summaries: List[dict]) -> str:
     return "".join(rows)
 
 
-def _panel_overview(summaries, claims, overall, stats) -> str:
+def _panel_overview(summaries, claims, overall, stats, dist_by_comp) -> str:
     n_mapped = sum(1 for c in claims if c.get("mapped"))
     n_unmapped = len(claims) - n_mapped
     p = []
@@ -439,8 +452,8 @@ def _panel_overview(summaries, claims, overall, stats) -> str:
     # Overall sentiment overview
     p.append("<h2>Overall sentiment across all competitors</h2>")
     p.append('<div class="card">')
-    p.append(svg_distribution_chart(overall_distribution(summaries)))
-    p.append(_overview_sentiment_table(summaries))
+    p.append(svg_distribution_chart(overall_distribution(dist_by_comp)))
+    p.append(_overview_sentiment_table(summaries, dist_by_comp))
     p.append("</div>")
     # Executive summary
     p.append("<h2>Executive Summary</h2>")
@@ -476,9 +489,9 @@ def _panel_overview(summaries, claims, overall, stats) -> str:
     return "\n".join(p)
 
 
-def _panel_competitor(cs, by_comp, examples_per_section) -> str:
+def _panel_competitor(cs, by_comp, dist_by_comp, examples_per_section) -> str:
     competitor = cs.get("competitor", "")
-    dist = (cs.get("distribution_split") or {}).get("all", {})
+    dist = dist_by_comp.get(competitor, {})
     market_view = (cs.get("market_view") or "").strip()
     p = ['<div class="card">', svg_distribution_chart(dist)]
     if market_view:
@@ -565,6 +578,7 @@ def build_report_a(synthesis: dict, examples_per_section: int, timestamp: str) -
 
     by_comp = claims_by_competitor(claims)
     stats = cross_competitor_stats(claims)
+    dist_by_comp = competitor_distributions(claims)
 
     # Header (stays above the tab bar, always visible)
     head: List[str] = []
@@ -578,10 +592,10 @@ def build_report_a(synthesis: dict, examples_per_section: int, timestamp: str) -
 
     # Tabs
     sections: "List[Tuple[str, str]]" = [
-        ("Insgesamt", _panel_overview(summaries, claims, overall, stats))]
+        ("Insgesamt", _panel_overview(summaries, claims, overall, stats, dist_by_comp))]
     for cs in summaries:
         label = competitor_heading(cs.get("competitor", ""), cs.get("generic", ""))
-        sections.append((label, _panel_competitor(cs, by_comp, examples_per_section)))
+        sections.append((label, _panel_competitor(cs, by_comp, dist_by_comp, examples_per_section)))
     sections.append(("Doctors weighing", _panel_multi(stats, examples_per_section)))
     sections.append(("Most active voices", _panel_top_voices(stats)))
     sections.append(("Methodology", _panel_methodology()))
