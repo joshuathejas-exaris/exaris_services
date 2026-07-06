@@ -261,6 +261,7 @@ body {
   line-height: 1.55; font-size: 15px;
 }
 .wrap { max-width: 960px; margin: 0 auto; padding: 32px 24px 64px; }
+.wrap.wide { max-width: 1280px; }
 h1 { font-size: 28px; margin: 0 0 4px; }
 h2 { font-size: 21px; margin: 40px 0 12px; padding-bottom: 6px;
      border-bottom: 2px solid #e5e9ee; }
@@ -303,6 +304,7 @@ li { margin: 4px 0; }
 .layout { display: flex; gap: 28px; align-items: flex-start; margin: 24px 0 8px; }
 .sidebar { flex: 0 0 220px; position: sticky; top: 16px; align-self: flex-start; }
 .content { flex: 1 1 auto; min-width: 0; }
+.content p, .content .muted, .content .quote { max-width: 75ch; }
 .nav-group-label { text-transform: uppercase; letter-spacing: .6px; font-size: 11px;
                    font-weight: 700; color: #9aa5b1; margin: 18px 0 6px; }
 .nav-group-label:first-child { margin-top: 0; }
@@ -371,13 +373,14 @@ def _render_sidebar(groups: "List[Tuple[str, List[Tuple[str, str]]]]") -> str:
     return '<div class="layout">\n' + "\n".join(nav) + "\n" + content + "\n</div>"
 
 
-def html_document(title: str, body: str) -> str:
+def html_document(title: str, body: str, wide: bool = False) -> str:
+    wrap_cls = "wrap wide" if wide else "wrap"
     return ("<!DOCTYPE html>\n"
             '<html lang="en">\n<head>\n<meta charset="utf-8">\n'
             '<meta name="viewport" content="width=device-width, initial-scale=1">\n'
             f"<title>{esc(title)}</title>\n"
             f"<style>{BASE_CSS}</style>\n</head>\n<body>\n"
-            f'<div class="wrap">\n{body}\n</div>\n</body>\n</html>\n')
+            f'<div class="{wrap_cls}">\n{body}\n</div>\n</body>\n</html>\n')
 
 
 def footer_html(timestamp: str) -> str:
@@ -632,7 +635,7 @@ def build_report_a(synthesis: dict, examples_per_section: int, timestamp: str) -
 
     body = "\n".join(head) + "\n" + _render_sidebar(groups) + "\n" + TAB_SCRIPT + "\n" \
         + footer_html(timestamp)
-    return html_document("Competitor Intelligence Report", body)
+    return html_document("Competitor Intelligence Report", body, wide=True)
 
 
 # --------------------------------------------------------------------------- #

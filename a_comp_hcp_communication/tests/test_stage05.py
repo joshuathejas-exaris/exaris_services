@@ -83,6 +83,8 @@ def test_reports_render_without_error():
     assert "Cross-Competitor Insights" in a and "Per-HCP Drill-Down" not in a
     assert "Most discussed by distinct doctors" in a
     assert "Plain-Language Guide" in b
+    # the wide container is scoped to the main report only, not the guide
+    assert 'class="wrap wide"' not in b
 
 
 def test_visible_claims_drops_coi():
@@ -165,3 +167,5 @@ def test_report_a_has_sidebar_and_panels():
     assert "Most discussed by distinct doctors" in a
     # the old flat tab bar is gone
     assert 'class="tabs"' not in a
+    # main report uses the wide container (scoped to report A only)
+    assert 'class="wrap wide"' in a
