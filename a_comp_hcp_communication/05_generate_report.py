@@ -18,6 +18,7 @@ import html
 import json
 import logging
 import os
+import re
 import sys
 import time
 from collections import OrderedDict, defaultdict
@@ -163,6 +164,22 @@ def cross_competitor_stats(claims: List[dict]) -> dict:
         "unmapped_doctors": sum(1 for d in packed if not d["mapped"]),
         "competitor_reach": competitor_reach,
     }
+
+
+def overall_distribution(summaries: List[dict]) -> Dict[str, int]:
+    """Aggregate sentiment counts across all competitor summaries (the 'all' split)."""
+    total = {s: 0 for s in SENTIMENT_LABELS}
+    for cs in summaries:
+        d = (cs.get("distribution_split") or {}).get("all", {})
+        for s in SENTIMENT_LABELS:
+            total[s] += int(d.get(s, 0) or 0)
+    return total
+
+
+def tab_id(label: str) -> str:
+    """Slugify a tab label into a stable DOM id (e.g. 'tab-saxenda-liraglutid')."""
+    slug = re.sub(r"[^a-z0-9]+", "-", (label or "").lower()).strip("-")
+    return "tab-" + (slug or "x")
 
 
 # --------------------------------------------------------------------------- #

@@ -97,3 +97,20 @@ def test_visible_claims_drops_coi():
     ]
     out = mod._visible_claims(claims)
     assert len(out) == 1 and out[0]["speaker_name"] == "A"
+
+
+def test_overall_distribution_sums_across_competitors():
+    summaries = [
+        {"distribution_split": {"all": {"positive": 2, "neutral": 1,
+                                        "negative": 0, "ambivalent": 0}}},
+        {"distribution_split": {"all": {"positive": 3, "neutral": 0,
+                                        "negative": 1, "ambivalent": 2}}},
+    ]
+    assert mod.overall_distribution(summaries) == {
+        "positive": 5, "neutral": 1, "negative": 1, "ambivalent": 2}
+
+
+def test_tab_id_slugifies():
+    assert mod.tab_id("Saxenda (Liraglutid)") == "tab-saxenda-liraglutid"
+    assert mod.tab_id("Insgesamt") == "tab-insgesamt"
+    assert mod.tab_id("Most active voices") == "tab-most-active-voices"
