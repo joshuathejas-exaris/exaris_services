@@ -289,7 +289,51 @@ footer { margin-top: 48px; padding-top: 16px; border-top: 1px solid #e5e9ee;
 ul, ol { margin: 8px 0; padding-left: 22px; }
 li { margin: 4px 0; }
 .hcp-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.tabs { display: flex; flex-wrap: wrap; gap: 4px; border-bottom: 2px solid #e5e9ee;
+        margin: 24px 0 8px; }
+.tab { padding: 8px 14px; border: 1px solid transparent; border-bottom: none;
+       border-radius: 8px 8px 0 0; background: transparent; color: #6b7280;
+       font-size: 14px; font-weight: 600; cursor: pointer; text-decoration: none; }
+.tab:hover { color: #1565c0; }
+.tab.active { background: #fcfdfe; border-color: #e5e9ee; color: #1565c0;
+              margin-bottom: -2px; }
+body.js-tabs .panel { display: none; }
+body.js-tabs .panel.active { display: block; }
 """
+
+TAB_SCRIPT = """
+<script>
+function showTab(id){
+  var ps = document.querySelectorAll('.panel');
+  for (var i = 0; i < ps.length; i++){ ps[i].classList.toggle('active', ps[i].id === id); }
+  var ts = document.querySelectorAll('.tab');
+  for (var j = 0; j < ts.length; j++){ ts[j].classList.toggle('active', ts[j].getAttribute('href') === '#' + id); }
+  return false;
+}
+document.addEventListener('DOMContentLoaded', function(){
+  document.body.classList.add('js-tabs');
+  var f = document.querySelector('.panel');
+  if (f) { showTab(f.id); }
+});
+</script>
+"""
+
+
+def _render_tabs(sections: "List[Tuple[str, str]]") -> str:
+    """sections: list of (label, panel_html). First is active on load. Degrades to a
+    full-scroll page when JS is disabled (no panel is hidden by default CSS)."""
+    nav = ['<div class="tabs" role="tablist">']
+    panels = []
+    for i, (label, body) in enumerate(sections):
+        tid = tab_id(label)
+        active = " active" if i == 0 else ""
+        nav.append(f'<a class="tab{active}" role="tab" id="{tid}-btn" href="#{tid}" '
+                   f'aria-controls="{tid}" onclick="return showTab(\'{tid}\')">'
+                   f"{esc(label)}</a>")
+        panels.append(f'<section class="panel{active}" role="tabpanel" id="{tid}" '
+                      f'aria-labelledby="{tid}-btn">\n{body}\n</section>')
+    nav.append("</div>")
+    return "\n".join(nav) + "\n" + "\n".join(panels)
 
 
 def html_document(title: str, body: str) -> str:
@@ -361,73 +405,49 @@ def _claim_example_html(c: dict) -> str:
 # --------------------------------------------------------------------------- #
 # Report A — Competitor Intelligence
 # --------------------------------------------------------------------------- #
-def build_report_a(synthesis: dict, examples_per_section: int, timestamp: str) -> str:
-    client_drug = (synthesis.get("client_drug") or "").strip() or "the client drug"
-    indication = (synthesis.get("indication") or "").strip() or "unspecified"
-    claims = _visible_claims(synthesis.get("claims", []) or [])
-    summaries = synthesis.get("competitor_summaries", []) or []
-    overall = (synthesis.get("overall_summary") or "").strip()
+def _overview_sentiment_table(summaries: List[dict]) -> str:
+    rows = ['<div class="scroll"><table>',
+            "<tr><th>Competitor</th><th>positive</th><th>neutral</th>"
+            "<th>negative</th><th>ambivalent</th></tr>"]
+    for cs in summaries:
+        d = (cs.get("distribution_split") or {}).get("all", {})
+        rows.append(
+            f"<tr><td>{esc(competitor_heading(cs.get('competitor', ''), cs.get('generic', '')))}</td>"
+            f"<td>{int(d.get('positive', 0) or 0)}</td>"
+            f"<td>{int(d.get('neutral', 0) or 0)}</td>"
+            f"<td>{int(d.get('negative', 0) or 0)}</td>"
+            f"<td>{int(d.get('ambivalent', 0) or 0)}</td></tr>")
+    rows.append("</table></div>")
+    return "".join(rows)
 
-    by_comp = claims_by_competitor(claims)
-    by_hcp = claims_by_hcp(claims)
+
+def _panel_overview(summaries, claims, overall, stats) -> str:
     n_mapped = sum(1 for c in claims if c.get("mapped"))
     n_unmapped = len(claims) - n_mapped
-
-    p: List[str] = []
-    p.append("<h1>Competitor Intelligence Report</h1>")
-    p.append(f'<p class="subtitle">Client drug: <strong>{esc(client_drug)}</strong> · '
-             f"Indication: <strong>{esc(indication)}</strong></p>")
-    p.append(f'<p class="meta">Generated {esc(timestamp)}</p>')
-    p.append(f'<p class="muted">Legend: {mapped_badge(True)} a speaker resolved to a '
-             f"known HCP customer record · {mapped_badge(False)} a doctor genuinely "
-             "quoted in a source but not in our HCP records.</p>")
-
+    p = []
+    # KPI tiles
     p.append('<div class="kpis">'
              f'<div class="kpi"><div class="n">{len(summaries)}</div>'
              '<div class="l">Competitors</div></div>'
-             f'<div class="kpi"><div class="n">{len(by_hcp)}</div>'
+             f'<div class="kpi"><div class="n">{stats["total_doctors"]}</div>'
              '<div class="l">Doctors with a grounded statement</div></div>'
              f'<div class="kpi"><div class="n">{len(claims)}</div>'
              '<div class="l">Grounded statements</div></div>'
              f'<div class="kpi"><div class="n">{n_mapped} / {n_unmapped}</div>'
              '<div class="l">Mapped / not mapped</div></div>'
              "</div>")
-
-    p.append("<h2>1. Executive Summary</h2>")
+    # Overall sentiment overview
+    p.append("<h2>Overall sentiment across all competitors</h2>")
+    p.append('<div class="card">')
+    p.append(svg_distribution_chart(overall_distribution(summaries)))
+    p.append(_overview_sentiment_table(summaries))
+    p.append("</div>")
+    # Executive summary
+    p.append("<h2>Executive Summary</h2>")
     p.append(f"<p>{esc(overall)}</p>" if overall
              else '<p class="muted">No overall summary was produced for this run.</p>')
-
-    p.append("<h2>2. Per-Competitor Analysis</h2>")
-    if not summaries:
-        p.append('<p class="muted">No competitor summaries available.</p>')
-    for cs in summaries:
-        competitor = cs.get("competitor", "")
-        dist = (cs.get("distribution_split") or {}).get("all", {})
-        market_view = (cs.get("market_view") or "").strip()
-        p.append(f"<h3>{esc(competitor_heading(competitor, cs.get('generic', '')))}</h3>")
-        p.append('<div class="card">')
-        p.append(svg_distribution_chart(dist))
-        if market_view:
-            p.append(f"<p>{esc(market_view)}</p>")
-        else:
-            p.append('<p class="muted">No market-view narrative available.</p>')
-        comp_claims = by_comp.get(competitor, [])
-        shown, remaining = slice_examples(comp_claims, examples_per_section)
-        if shown:
-            p.append("<p><strong>Grounded HCP statements</strong></p>")
-            for c in shown:
-                p.append(_claim_example_html(c))
-            if remaining > 0:
-                p.append(f'<p class="more">+ {remaining} more statement(s) for '
-                         f"{esc(competitor)} — see the Excel export.</p>")
-        else:
-            p.append('<p class="muted">No grounded statements for this competitor.</p>')
-        p.append("</div>")
-
-    # 3. Cross-competitor insights — stats you cannot read off the per-competitor
-    # sections (the full per-doctor statement list lives in the Excel export).
-    stats = cross_competitor_stats(claims)
-    p.append("<h2>3. Cross-Competitor Insights</h2>")
+    # Cross-competitor KPIs + reach
+    p.append("<h2>Cross-Competitor Insights</h2>")
     p.append('<div class="kpis">'
              f'<div class="kpi"><div class="n">{stats["total_doctors"]}</div>'
              '<div class="l">Distinct doctors</div></div>'
@@ -438,14 +458,13 @@ def build_report_a(synthesis: dict, examples_per_section: int, timestamp: str) -
              f'<div class="kpi"><div class="n">{stats["unmapped_doctors"]}</div>'
              '<div class="l">Not-mapped doctors</div></div>'
              "</div>")
-
     reach = stats["competitor_reach"]
     p.append("<h3>Reach — distinct doctors per competitor</h3>")
     if not reach:
         p.append('<p class="muted">No competitors had grounded statements this run.</p>')
     else:
         top = reach[0]
-        p.append(f'<p>Most discussed by distinct doctors: '
+        p.append('<p>Most discussed by distinct doctors: '
                  f'<strong>{esc(competitor_heading(top["competitor"], top["generic"]))}</strong> '
                  f'— {top["n_doctors"]} doctor(s).</p>')
         p.append('<div class="scroll"><table>')
@@ -454,57 +473,122 @@ def build_report_a(synthesis: dict, examples_per_section: int, timestamp: str) -
             p.append(f"<tr><td>{esc(competitor_heading(r['competitor'], r['generic']))}</td>"
                      f"<td>{r['n_doctors']}</td></tr>")
         p.append("</table></div>")
+    return "\n".join(p)
 
-    p.append("<h3>Doctors weighing in on multiple competitors</h3>")
-    p.append('<p class="muted">Voices comparing several competitor drugs are the most '
-             "commercially interesting — they signal where the market conversation "
-             "overlaps.</p>")
+
+def _panel_competitor(cs, by_comp, examples_per_section) -> str:
+    competitor = cs.get("competitor", "")
+    dist = (cs.get("distribution_split") or {}).get("all", {})
+    market_view = (cs.get("market_view") or "").strip()
+    p = ['<div class="card">', svg_distribution_chart(dist)]
+    if market_view:
+        p.append(f"<p>{esc(market_view)}</p>")
+    else:
+        p.append('<p class="muted">No market-view narrative available.</p>')
+    comp_claims = by_comp.get(competitor, [])
+    shown, remaining = slice_examples(comp_claims, examples_per_section)
+    if shown:
+        p.append("<p><strong>Grounded HCP statements</strong></p>")
+        for c in shown:
+            p.append(_claim_example_html(c))
+        if remaining > 0:
+            p.append(f'<p class="more">+ {remaining} more statement(s) for '
+                     f"{esc(competitor)} — see the Excel export.</p>")
+    else:
+        p.append('<p class="muted">No grounded statements for this competitor.</p>')
+    p.append("</div>")
+    return "\n".join(p)
+
+
+def _panel_multi(stats, examples_per_section) -> str:
+    p = ['<p class="muted">Voices comparing several competitor drugs are the most '
+         "commercially interesting — they signal where the market conversation "
+         "overlaps.</p>"]
     shown_multi, remaining_multi = slice_examples(stats["multi_doctors"], examples_per_section)
     if not shown_multi:
         p.append('<p class="muted">No doctor discussed more than one competitor in this run.</p>')
-    else:
-        p.append('<div class="scroll"><table>')
-        p.append("<tr><th>Doctor</th><th></th><th>Competitors</th>"
-                 "<th># statements</th><th>Sentiment mix</th></tr>")
-        for d in shown_multi:
-            comps = ", ".join(esc(x) for x in d["competitors"])
-            senti = ", ".join(f"{k}:{v}" for k, v in d["sentiments"].items() if k)
-            cid = f' <span class="meta">{esc(d["s_customer_id"])}</span>' if d["s_customer_id"] else ""
-            p.append(f"<tr><td><strong>{esc(d['name'])}</strong>{cid}</td>"
-                     f"<td>{mapped_badge(d['mapped'])}</td>"
-                     f"<td>{comps} <span class='meta'>({len(d['competitors'])})</span></td>"
-                     f"<td>{d['n_statements']}</td>"
-                     f"<td>{esc(senti)}</td></tr>")
-        p.append("</table></div>")
-        if remaining_multi > 0:
-            p.append(f'<p class="more">+ {remaining_multi} more multi-competitor doctor(s) '
-                     "— see the Excel export.</p>")
+        return "\n".join(p)
+    p.append('<div class="scroll"><table>')
+    p.append("<tr><th>Doctor</th><th></th><th>Competitors</th>"
+             "<th># statements</th><th>Sentiment mix</th></tr>")
+    for d in shown_multi:
+        comps = ", ".join(esc(x) for x in d["competitors"])
+        senti = ", ".join(f"{k}:{v}" for k, v in d["sentiments"].items() if k)
+        cid = f' <span class="meta">{esc(d["s_customer_id"])}</span>' if d["s_customer_id"] else ""
+        p.append(f"<tr><td><strong>{esc(d['name'])}</strong>{cid}</td>"
+                 f"<td>{mapped_badge(d['mapped'])}</td>"
+                 f"<td>{comps} <span class='meta'>({len(d['competitors'])})</span></td>"
+                 f"<td>{d['n_statements']}</td>"
+                 f"<td>{esc(senti)}</td></tr>")
+    p.append("</table></div>")
+    if remaining_multi > 0:
+        p.append(f'<p class="more">+ {remaining_multi} more multi-competitor doctor(s) '
+                 "— see the Excel export.</p>")
+    return "\n".join(p)
 
-    p.append("<h3>Most active voices</h3>")
-    p.append('<p class="muted">Doctors with the most grounded statements this run.</p>')
+
+def _panel_top_voices(stats) -> str:
+    p = ['<p class="muted">Doctors with the most grounded statements this run.</p>']
     top = [d for d in stats["top_voices"] if d["n_statements"] > 1][:10]
     if not top:
         p.append('<p class="muted">No doctor made more than one grounded statement.</p>')
-    else:
-        p.append('<div class="scroll"><table>')
-        p.append("<tr><th>Doctor</th><th></th><th># statements</th><th>Competitors covered</th></tr>")
-        for d in top:
-            p.append(f"<tr><td><strong>{esc(d['name'])}</strong></td>"
-                     f"<td>{mapped_badge(d['mapped'])}</td>"
-                     f"<td>{d['n_statements']}</td>"
-                     f"<td>{len(d['competitors'])}</td></tr>")
-        p.append("</table></div>")
+        return "\n".join(p)
+    p.append('<div class="scroll"><table>')
+    p.append("<tr><th>Doctor</th><th></th><th># statements</th><th>Competitors covered</th></tr>")
+    for d in top:
+        p.append(f"<tr><td><strong>{esc(d['name'])}</strong></td>"
+                 f"<td>{mapped_badge(d['mapped'])}</td>"
+                 f"<td>{d['n_statements']}</td>"
+                 f"<td>{len(d['competitors'])}</td></tr>")
+    p.append("</table></div>")
+    return "\n".join(p)
 
-    p.append("<h2>4. Methodology</h2>")
-    p.append("<p>Doctors were included only where a database gate confirmed a genuine "
-             "doctor discussing the drug's topic, then an LLM extracted verbatim "
-             "statements. Every statement is grounded twice: its quote must be present "
-             "verbatim in the source, and an independent verification pass confirms the "
-             "named doctor actually expresses that view. Mapped statements resolve to a "
-             "known HCP record; unmapped ones are genuine doctor statements from the "
-             "same sources without a customer match.</p>")
-    p.append(footer_html(timestamp))
-    return html_document("Competitor Intelligence Report", "\n".join(p))
+
+def _panel_methodology() -> str:
+    return ("<p>Doctors were included only where a database gate confirmed a genuine "
+            "doctor discussing the drug's topic, then an LLM extracted verbatim "
+            "statements. Every statement is grounded twice: its quote must be present "
+            "verbatim in the source, and an independent verification pass confirms the "
+            "named doctor actually expresses that view. Mapped statements resolve to a "
+            "known HCP record; unmapped ones are genuine doctor statements from the "
+            "same sources without a customer match. Financial conflict-of-interest "
+            "disclosures (funding, shares, advisory-board roles, honoraria) are "
+            "excluded from this report and the Excel export.</p>")
+
+
+def build_report_a(synthesis: dict, examples_per_section: int, timestamp: str) -> str:
+    client_drug = (synthesis.get("client_drug") or "").strip() or "the client drug"
+    indication = (synthesis.get("indication") or "").strip() or "unspecified"
+    claims = _visible_claims(synthesis.get("claims", []) or [])
+    summaries = synthesis.get("competitor_summaries", []) or []
+    overall = (synthesis.get("overall_summary") or "").strip()
+
+    by_comp = claims_by_competitor(claims)
+    stats = cross_competitor_stats(claims)
+
+    # Header (stays above the tab bar, always visible)
+    head: List[str] = []
+    head.append("<h1>Competitor Intelligence Report</h1>")
+    head.append(f'<p class="subtitle">Client drug: <strong>{esc(client_drug)}</strong> · '
+                f"Indication: <strong>{esc(indication)}</strong></p>")
+    head.append(f'<p class="meta">Generated {esc(timestamp)}</p>')
+    head.append(f'<p class="muted">Legend: {mapped_badge(True)} a speaker resolved to a '
+                f"known HCP customer record · {mapped_badge(False)} a doctor genuinely "
+                "quoted in a source but not in our HCP records.</p>")
+
+    # Tabs
+    sections: "List[Tuple[str, str]]" = [
+        ("Insgesamt", _panel_overview(summaries, claims, overall, stats))]
+    for cs in summaries:
+        label = competitor_heading(cs.get("competitor", ""), cs.get("generic", ""))
+        sections.append((label, _panel_competitor(cs, by_comp, examples_per_section)))
+    sections.append(("Doctors weighing", _panel_multi(stats, examples_per_section)))
+    sections.append(("Most active voices", _panel_top_voices(stats)))
+    sections.append(("Methodology", _panel_methodology()))
+
+    body = "\n".join(head) + "\n" + _render_tabs(sections) + "\n" + TAB_SCRIPT + "\n" \
+        + footer_html(timestamp)
+    return html_document("Competitor Intelligence Report", body)
 
 
 # --------------------------------------------------------------------------- #
