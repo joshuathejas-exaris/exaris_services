@@ -12,6 +12,39 @@ _TITLE_RE = re.compile(r"\b(dr|prof|med|dipl|mag|phd|md|priv|doz)\.?\b", re.IGNO
 _PUNCT_RE = re.compile(r"[^\w\s-]", re.UNICODE)
 _WS_RE = re.compile(r"\s+")
 
+# Financial conflict-of-interest / disclosure language (DE + EN). Note: study/trial
+# and "board" membership terms are disclosure signals here, so they are NOT treated
+# as clinical signals below.
+_COI_PATTERNS = re.compile(
+    r"forschungsgeld|forschungsförder|drittmittel|"
+    r"\baktien\b|\bshares?\b|\bstocks?\b|"
+    r"advisory board|\bbeirat\b|"
+    r"honorar|honoraria|vortragshonorar|"
+    r"case payment|"
+    r"\bberater|consult(?:ing|ant)|"
+    r"interessenkonflikt|conflict of interest|declaration of interest|"
+    r"finanzielle (?:zuwendung|unterstützung)|"
+    r"research (?:funding|grant)|grants? from",
+    re.IGNORECASE,
+)
+
+# Clinical-signal vocabulary: if present, the statement carries real drug content and
+# is kept even if it also mentions a financial tie (conservative). Deliberately
+# excludes generic words like "study"/"board" that appear inside disclosures.
+_CLINICAL_SIGNAL = re.compile(
+    r"gewicht|weight|abnehm|"
+    r"nebenwirkung|side.?effect|verträglich|toleran|tolerab|"
+    r"wirksam|wirkung|efficac|effektiv|"
+    r"blutzucker|hba1c|gluk|glyk|"
+    r"appetit|sättig|satiety|"
+    r"dosier|dosis|dosing|"
+    r"übelkeit|erbrechen|durchfall|muskel|"
+    r"reduktion|reduzier|verbesser|improve|"
+    r"empfehl|prescrib|verordn|"
+    r"mechanism|mechanismus|kosten|teuer|expensive|price|positionier|positioning",
+    re.IGNORECASE,
+)
+
 
 def strip_json_fences(text: str) -> str:
     """Remove ```json ... ``` fences and surrounding prose around a JSON object."""
@@ -45,6 +78,21 @@ def normalize_name(name: str) -> str:
 
 def _tokens(name: str) -> List[str]:
     return [t for t in normalize_name(name).split(" ") if t]
+
+
+def is_coi_disclosure(quote: str, statement: str = "") -> bool:
+    """True when the text is primarily a financial conflict-of-interest disclosure.
+
+    Conservative: fires only when a disclosure pattern matches AND no clinical-signal
+    vocabulary is present, so a statement that both discloses a financial tie and makes
+    a genuine claim about the drug is kept.
+    """
+    text = f"{quote or ''} {statement or ''}"
+    if not _COI_PATTERNS.search(text):
+        return False
+    if _CLINICAL_SIGNAL.search(text):
+        return False
+    return True
 
 
 def name_matches(extracted: str, first: str, last: str) -> bool:

@@ -83,3 +83,78 @@ def test_reports_render_without_error():
     assert "Cross-Competitor Insights" in a and "Per-HCP Drill-Down" not in a
     assert "Most discussed by distinct doctors" in a
     assert "Plain-Language Guide" in b
+
+
+def test_visible_claims_drops_coi():
+    claims = [
+        {"speaker_name": "A", "competitor": "Wegovy",
+         "verbatim_quote": "Semaglutid senkt das Gewicht deutlich.",
+         "statement": "efficacy"},
+        {"speaker_name": "B", "competitor": "Wegovy",
+         "verbatim_quote": ("Ich erhalte Forschungsgelder von Novo Nordisk. "
+                            "Ich halte auch Aktien der Firma."),
+         "statement": "receives funding and holds stocks"},
+    ]
+    out = mod._visible_claims(claims)
+    assert len(out) == 1 and out[0]["speaker_name"] == "A"
+
+
+def test_overall_distribution_sums_across_competitors():
+    dist_by_comp = {
+        "A": {"positive": 2, "neutral": 1, "negative": 0, "ambivalent": 0},
+        "B": {"positive": 3, "neutral": 0, "negative": 1, "ambivalent": 2},
+    }
+    assert mod.overall_distribution(dist_by_comp) == {
+        "positive": 5, "neutral": 1, "negative": 1, "ambivalent": 2}
+
+
+def test_competitor_distributions_from_claims():
+    claims = [
+        {"competitor": "Saxenda", "sentiment": "positive"},
+        {"competitor": "Saxenda", "sentiment": "negative"},
+        {"competitor": "Mounjaro", "sentiment": "neutral"},
+    ]
+    d = mod.competitor_distributions(claims)
+    assert d["Saxenda"] == {"positive": 1, "neutral": 0, "negative": 1, "ambivalent": 0}
+    assert d["Mounjaro"]["neutral"] == 1
+
+
+def test_overview_table_reflects_filtered_not_summaries():
+    # summaries say Wegovy neutral=1, but the only visible claim is positive.
+    summaries = [{"competitor": "Wegovy", "generic": "Semaglutid",
+                  "distribution_split": {"all": {"positive": 1, "neutral": 1,
+                                                 "negative": 0, "ambivalent": 0}}}]
+    claims = [{"competitor": "Wegovy", "sentiment": "positive"}]
+    dist_by_comp = mod.competitor_distributions(claims)
+    stats = mod.cross_competitor_stats(claims)
+    html = mod._panel_overview(summaries, claims, "summary", stats, dist_by_comp)
+    # Wegovy row must be pos1 neu0 neg0 amb0 (from filtered claims), NOT pos1 neu1 (summaries)
+    assert "<td>1</td><td>0</td><td>0</td><td>0</td>" in html
+    assert "<td>1</td><td>1</td>" not in html
+
+
+def test_tab_id_slugifies():
+    assert mod.tab_id("Saxenda (Liraglutid)") == "tab-saxenda-liraglutid"
+    assert mod.tab_id("Insgesamt") == "tab-insgesamt"
+    assert mod.tab_id("Most active voices") == "tab-most-active-voices"
+
+
+def test_report_a_has_tabs_and_panels():
+    a = mod.build_report_a(SYNTH, 15, "2026-07-03 12:00:00")
+    # progressive-enhancement tab scaffolding
+    assert 'class="tabs"' in a
+    assert "function showTab" in a
+    assert "js-tabs" in a
+    # the overview tab and a per-competitor tab exist as nav + panel
+    assert 'href="#tab-insgesamt"' in a
+    assert 'id="tab-insgesamt"' in a
+    assert 'href="#tab-saxenda-liraglutid"' in a
+    assert 'id="tab-saxenda-liraglutid"' in a
+    # fixed tabs present
+    for label in ("Insgesamt", "Doctors weighing", "Most active voices", "Methodology"):
+        assert label in a
+    # overview shows an aggregate sentiment chart and exec summary text
+    assert "Overall sentiment" in a
+    # substrings the existing render test relies on still present
+    assert "Cross-Competitor Insights" in a
+    assert "Most discussed by distinct doctors" in a

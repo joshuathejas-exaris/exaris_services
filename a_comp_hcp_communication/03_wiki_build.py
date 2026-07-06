@@ -26,8 +26,8 @@ from typing import Dict, List, Optional, Tuple
 
 # Each stage file adds the repo root to sys.path so it can import from shared/.
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from pipeline_common import (call_bedrock_json, make_bedrock_client,  # noqa: E402
-                             name_matches, normalize_name)
+from pipeline_common import (call_bedrock_json, is_coi_disclosure,  # noqa: E402
+                             make_bedrock_client, name_matches, normalize_name)
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 CONFIG_PATH = os.path.join(_HERE, "config.ini")
@@ -93,10 +93,23 @@ def resolve_speaker(speaker_name: str, mapped_hcps: List[dict]) -> Tuple[bool, s
     return False, ""
 
 
+def split_grounded(claims: List[dict], source: dict) -> Tuple[List[dict], List[dict]]:
+    """Split claims into (grounded, dropped). Dropped claims get drop_reason='grounding'."""
+    text = source.get("full_text", "")
+    kept, dropped = [], []
+    for c in claims:
+        if quote_grounded(c.get("verbatim_quote", ""), text):
+            kept.append(c)
+        else:
+            d = dict(c)
+            d["drop_reason"] = "grounding"
+            dropped.append(d)
+    return kept, dropped
+
+
 def filter_grounded_claims(claims: List[dict], source: dict) -> List[dict]:
     """Keep only claims whose verbatim_quote is literally present in the source."""
-    text = source.get("full_text", "")
-    return [c for c in claims if quote_grounded(c.get("verbatim_quote", ""), text)]
+    return split_grounded(claims, source)[0]
 
 
 # --------------------------------------------------------------------------- #
@@ -113,6 +126,27 @@ about the drug in the text. If a doctor is merely named on the page while the dr
 is mentioned elsewhere, and that doctor does not actually say anything about the \
 drug, DO NOT extract it. Do not infer, translate, or invent. Every "verbatim_quote" \
 must be copied character-for-character from the document, in its original language.
+
+EXCLUDE (never extract), even when a named doctor says them:
+- Conflict-of-interest / financial-disclosure statements: research funding or grants, \
+stock or share ownership, advisory-board membership, consulting fees, speaker \
+honoraria, and case/study payments or other financial ties to a manufacturer \
+(e.g. "Ich erhalte Forschungsgelder von ...", "Ich halte Aktien ...", "war Mitglied \
+im Advisory Board", "Speaker Honoraria", "Case payments").
+Extract only statements expressing a view or clinical claim ABOUT the drug itself — \
+efficacy, safety/tolerability, dosing, mechanism, positioning, patient experience, or \
+comparison with other drugs.
+
+Assign "sentiment" by the doctor's stance TOWARD the drug:
+- "positive" — favourable: efficacy, benefit, endorsement, good tolerability.
+- "negative" — unfavourable OR reports a material drawback: significant side-effect \
+burden, safety risk, cost concern, efficacy limitation, weight regain, need for \
+lifelong therapy, muscle-mass loss, or an explicitly critical view.
+- "ambivalent" — names a benefit AND a drawback together.
+- "neutral" — purely descriptive/factual with no benefit or drawback implied \
+(e.g. approval status, dosing schedule, mechanism, brand/generic identity).
+Judge only from the quote; never invent a stance the text does not support. Extract \
+critical statements with the SAME fidelity as positive ones.
 
 Document (source_url: {source.get('url') or '(none)'}):
 \"\"\"
@@ -156,8 +190,13 @@ Respond with ONLY: {{"verified": true}} or {{"verified": false}}."""
 # --------------------------------------------------------------------------- #
 # Ingest + verify
 # --------------------------------------------------------------------------- #
-def ingest_source(bedrock, config, competitor: str, generic: str, source: dict) -> List[dict]:
-    """Ingest one source → grounded, speaker-resolved claims (pre-verify)."""
+def ingest_source(bedrock, config, competitor: str, generic: str,
+                  source: dict) -> Tuple[List[dict], List[dict]]:
+    """Ingest one source → (grounded+speaker-resolved kept claims, dropped claims).
+
+    Dropped claims carry drop_reason in {"coi", "grounding"}. Verify-stage drops are
+    recorded by the caller.
+    """
     cfg = config["comp_hcp"]
     wcfg = config["wiki"]
     prompt = build_ingest_prompt(competitor, generic, source)
@@ -168,8 +207,8 @@ def ingest_source(bedrock, config, competitor: str, generic: str, source: dict) 
     except Exception as err:  # noqa: BLE001
         log.error("Ingest failed for %s / %s: %s", competitor,
                   source.get("website_id"), err)
-        return []
-    claims = []
+        return [], []
+    claims, dropped = [], []
     for rc in raw.get("claims") or []:
         c = normalize_claim(rc, competitor, source)
         if c is None:
@@ -177,9 +216,17 @@ def ingest_source(bedrock, config, competitor: str, generic: str, source: dict) 
         mapped, cid = resolve_speaker(c["speaker_name"], source.get("mapped_hcps", []))
         c["mapped"] = mapped
         c["s_customer_id"] = cid
+        # COI safety net (belt-and-suspenders with the ingest-prompt exclusion)
+        if is_coi_disclosure(c["verbatim_quote"], c.get("statement", "")):
+            d = dict(c)
+            d["drop_reason"] = "coi"
+            dropped.append(d)
+            continue
         claims.append(c)
     # deterministic grounding gate BEFORE spending a verify call
-    return filter_grounded_claims(claims, source)
+    kept, grounding_dropped = split_grounded(claims, source)
+    dropped.extend(grounding_dropped)
+    return kept, dropped
 
 
 def verify_claim(bedrock, config, claim: dict, source: dict) -> bool:
@@ -226,7 +273,8 @@ def _write_text(path: str, text: str) -> None:
         fh.write(text)
 
 
-def write_wiki_tree(run_dir: str, block: dict, claims: List[dict]) -> None:
+def write_wiki_tree(run_dir: str, block: dict, claims: List[dict],
+                    dropped: Optional[List[dict]] = None) -> None:
     """Write raw/, wiki/ (entity pages + index.md + log.md), schema/ for one competitor."""
     comp = block.get("competitor", "untitled")
     comp_dir = os.path.join(run_dir, _slug(comp))
@@ -252,13 +300,23 @@ def write_wiki_tree(run_dir: str, block: dict, claims: List[dict]) -> None:
         _write_text(os.path.join(comp_dir, "wiki", f"{_slug(name)}.md"), "\n".join(page))
         index_lines.append(f"- [[{_slug(name)}]] — {len(cs)} statement(s), {flag}")
     _write_text(os.path.join(comp_dir, "wiki", "index.md"), "\n".join(index_lines))
+    dropped = dropped or []
+    drop_counts: Dict[str, int] = {}
+    for d in dropped:
+        drop_counts[d.get("drop_reason", "?")] = drop_counts.get(d.get("drop_reason", "?"), 0) + 1
+    sent_kept: Dict[str, int] = {}
+    for c in claims:
+        sent_kept[c.get("sentiment", "?")] = sent_kept.get(c.get("sentiment", "?"), 0) + 1
     _write_text(os.path.join(comp_dir, "wiki", "log.md"),
                 f"## run\n- ingested {len(block.get('sources', []))} source(s); "
-                f"{len(claims)} grounded+verified claim(s).\n")
+                f"{len(claims)} grounded+verified claim(s) "
+                f"(dropped: {drop_counts or '{}'}); sentiment(kept)={sent_kept or '{}'}.\n")
     # schema/
     _write_text(os.path.join(comp_dir, "schema", "knowledge_graph.json"),
                 json.dumps(build_competitor_graph(block, claims), indent=2,
                            ensure_ascii=False))
+    _write_text(os.path.join(comp_dir, "schema", "drops.json"),
+                json.dumps(dropped, indent=2, ensure_ascii=False))
 
 
 # --------------------------------------------------------------------------- #
@@ -304,14 +362,17 @@ def main() -> None:
         sources = b.get("sources", [])
         # INGEST (parallel over sources)
         ingested: List[Tuple[dict, dict]] = []  # (claim, source)
+        dropped: List[dict] = []
         if sources:
             with ThreadPoolExecutor(max_workers=max(1, min(iw, len(sources)))) as pool:
                 futs = {pool.submit(ingest_source, bedrock, config, comp, generic, s): s
                         for s in sources}
                 for f in as_completed(futs):
                     s = futs[f]
-                    for c in f.result():
+                    kept, drop = f.result()
+                    for c in kept:
                         ingested.append((c, s))
+                    dropped.extend(drop)
         # VERIFY (parallel over claims)
         verified: List[dict] = []
         if ingested:
@@ -323,9 +384,13 @@ def main() -> None:
                     if f.result():
                         c["verified"] = True
                         verified.append(c)
-        log.info("Competitor '%s': %d ingested → %d verified claim(s).",
-                 comp, len(ingested), len(verified))
-        write_wiki_tree(run_dir, b, verified)
+                    else:
+                        d = dict(c)
+                        d["drop_reason"] = "verify"
+                        dropped.append(d)
+        log.info("Competitor '%s': %d ingested → %d verified claim(s); %d dropped.",
+                 comp, len(ingested), len(verified), len(dropped))
+        write_wiki_tree(run_dir, b, verified, dropped)
         graph["competitors"].append(build_competitor_graph(b, verified))
     os.makedirs(os.path.dirname(OUTPUT_PATH), exist_ok=True)
     with open(OUTPUT_PATH, "w", encoding="utf-8") as fh:

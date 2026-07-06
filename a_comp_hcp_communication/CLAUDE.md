@@ -89,9 +89,9 @@ Tests (no AWS/Snowflake/ONNX needed — external boundaries are mocked):
 |------|---------|
 | `01_identify_competitors.py` | Map CF terms + client drug → competitors (brand/generic, `source: cf\|llm`). Rejects a drug name leaking in as the indication. |
 | `02_retrieve_sources.py` | Revised gate (Track A) / global vector search (Track B) → full-content source docs + mapped-HCP roster. |
-| `03_wiki_build.py` | Ingest → quote-grounding → verify → map; writes wiki tree + `knowledge_graph.json`. |
+| `03_wiki_build.py` | Ingest → quote-grounding → verify → map; writes wiki tree + `knowledge_graph.json`. COI disclosures excluded; drops (coi/grounding/verify) persisted to wiki/<ts>/<competitor>/schema/drops.json. |
 | `04_synthesize.py` | Aggregate claims: mapped/unmapped sentiment split, market view, overall summary. |
-| `05_generate_report.py` | 3 HTML reports (10–15 examples/section + "N more") + full Excel. |
+| `05_generate_report.py` | 3 HTML reports (10–15 examples/section + "N more") + full Excel. Primary report tabbed (overview + per-competitor + doctors-weighing + most-active + methodology); COI disclosures filtered from HTML + Excel. |
 | `pipeline_common.py` | Shared helpers: JSON parse, name-match, Bedrock JSON call. |
 | `vector_creator.py` | Local ONNX embedding — **do not modify**. |
 | `reranker.py` | Local reranker — **do not modify** (unused after the rework; kept for parity). |
