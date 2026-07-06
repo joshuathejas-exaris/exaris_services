@@ -62,3 +62,29 @@ def test_filter_grounded_drops_holznagel_false_attribution():
     kept = mod.filter_grounded_claims(claims, SOURCE)
     assert len(kept) == 1
     assert kept[0]["speaker_name"] == "Vesna Budić-Spasić"
+
+
+def test_split_grounded_tags_dropped_reason():
+    claims = [
+        {"speaker_name": "Vesna Budić-Spasić",
+         "verbatim_quote": "Saxenda wirkt gut bei Adipositas",
+         "wirkstoff": "Saxenda", "sentiment": "positive", "confidence": "high",
+         "statement": "efficacy", "citation": {"website_id": "w1", "url": "http://a"}},
+        {"speaker_name": "Michael Holznagel", "verbatim_quote": "Ich empfehle Saxenda",
+         "wirkstoff": "Saxenda", "sentiment": "positive", "confidence": "high",
+         "statement": "endorses", "citation": {"website_id": "w1", "url": "http://a"}},
+    ]
+    kept, dropped = mod.split_grounded(claims, SOURCE)
+    assert len(kept) == 1 and kept[0]["speaker_name"] == "Vesna Budić-Spasić"
+    assert len(dropped) == 1 and dropped[0]["drop_reason"] == "grounding"
+
+
+def test_filter_grounded_claims_still_returns_kept_only():
+    claims = [
+        {"speaker_name": "Vesna Budić-Spasić",
+         "verbatim_quote": "Saxenda wirkt gut bei Adipositas",
+         "wirkstoff": "Saxenda", "sentiment": "positive", "confidence": "high",
+         "statement": "efficacy", "citation": {"website_id": "w1", "url": "http://a"}},
+    ]
+    kept = mod.filter_grounded_claims(claims, SOURCE)
+    assert len(kept) == 1
