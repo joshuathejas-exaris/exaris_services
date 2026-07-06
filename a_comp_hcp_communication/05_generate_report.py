@@ -304,7 +304,6 @@ li { margin: 4px 0; }
 .layout { display: flex; gap: 28px; align-items: flex-start; margin: 24px 0 8px; }
 .sidebar { flex: 0 0 220px; position: sticky; top: 16px; align-self: flex-start; }
 .content { flex: 1 1 auto; min-width: 0; }
-.content p, .content .muted, .content .quote { max-width: 75ch; }
 .nav-group-label { text-transform: uppercase; letter-spacing: .6px; font-size: 11px;
                    font-weight: 700; color: #9aa5b1; margin: 18px 0 6px; }
 .nav-group-label:first-child { margin-top: 0; }
