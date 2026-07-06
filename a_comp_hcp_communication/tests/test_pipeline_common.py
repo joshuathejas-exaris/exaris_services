@@ -34,3 +34,37 @@ def test_name_matches_wrong_person():
 
 def test_name_matches_last_only_is_not_enough():
     assert pc.name_matches("Holznagel", "Michael", "Holznagel") is False
+
+
+def test_coi_flagged_quote_funding_and_stocks():
+    q = ("Ich erhalte Forschungsgelder von der Firma Novo Nordisk, welche "
+         "Semaglutid vermarktet. Ich halte auch Aktien der Firma Novo Nordisk.")
+    assert pc.is_coi_disclosure(q, "receives research funding and holds stocks") is True
+
+
+def test_coi_flagged_quote_advisory_board_honoraria():
+    q = ("Ich erhielt Case payments bei Studien von Novo Nordisk (STEP-HF Trial), "
+         "war Mitglied im Advisory Board und erhielt Speaker Honoraria für Novo "
+         "Nordisk Produkte.")
+    assert pc.is_coi_disclosure(q) is True
+
+
+def test_coi_advisory_board_only():
+    assert pc.is_coi_disclosure(
+        "Tätigkeit im wissenschaftlichen Advisory Board Deutschland für Novo Nordisk.") is True
+
+
+def test_coi_kept_when_clinical_claim_present():
+    # Discloses honoraria BUT also makes a clinical claim -> conservative: keep.
+    q = ("Ich erhalte Honorare von Novo Nordisk. Semaglutid senkt das Gewicht "
+         "deutlich und verbessert den HbA1c.")
+    assert pc.is_coi_disclosure(q) is False
+
+
+def test_coi_plain_clinical_statement_not_flagged():
+    assert pc.is_coi_disclosure(
+        "Liraglutid senkt das Gewicht um 8 bis 10 Prozent.", "efficacy") is False
+
+
+def test_coi_empty_not_flagged():
+    assert pc.is_coi_disclosure("", "") is False
