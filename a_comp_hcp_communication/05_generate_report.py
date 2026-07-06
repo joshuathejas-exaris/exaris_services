@@ -26,6 +26,8 @@ from typing import Dict, List, Tuple
 # Each stage file adds the repo root to sys.path so it can import from shared/.
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
+from pipeline_common import is_coi_disclosure  # noqa: E402
+
 _HERE = os.path.dirname(os.path.abspath(__file__))
 CONFIG_PATH = os.path.join(_HERE, "config.ini")
 SYNTHESIS_PATH = os.path.join(_HERE, "data", "synthesis.json")
@@ -290,6 +292,18 @@ def footer_html(timestamp: str) -> str:
 # --------------------------------------------------------------------------- #
 # Claim grouping
 # --------------------------------------------------------------------------- #
+def _visible_claims(claims: List[dict]) -> List[dict]:
+    """Drop financial COI disclosures so they never reach the report or Excel."""
+    out = []
+    for c in claims:
+        if is_coi_disclosure(c.get("verbatim_quote", ""), c.get("statement", "")):
+            log.info("Filtered COI disclosure: %s / %s",
+                     c.get("speaker_name"), c.get("competitor"))
+            continue
+        out.append(c)
+    return out
+
+
 def claims_by_competitor(claims: List[dict]) -> "OrderedDict[str, List[dict]]":
     grouped: "OrderedDict[str, List[dict]]" = OrderedDict()
     for c in claims:
@@ -333,7 +347,7 @@ def _claim_example_html(c: dict) -> str:
 def build_report_a(synthesis: dict, examples_per_section: int, timestamp: str) -> str:
     client_drug = (synthesis.get("client_drug") or "").strip() or "the client drug"
     indication = (synthesis.get("indication") or "").strip() or "unspecified"
-    claims = synthesis.get("claims", []) or []
+    claims = _visible_claims(synthesis.get("claims", []) or [])
     summaries = synthesis.get("competitor_summaries", []) or []
     overall = (synthesis.get("overall_summary") or "").strip()
 
@@ -695,7 +709,7 @@ def write_excel(synthesis, path):
     for i, _ in enumerate(headers, 1):
         ws.cell(row=1, column=i).font = hf
         ws.cell(row=1, column=i).fill = fill
-    for c in synthesis.get("claims", []):
+    for c in _visible_claims(synthesis.get("claims", []) or []):
         cit = c.get("citation", {}) or {}
         ws.append([c.get("speaker_name", ""), "yes" if c.get("mapped") else "no",
                    c.get("s_customer_id", ""), c.get("competitor", ""), c.get("generic", ""),

@@ -83,3 +83,17 @@ def test_reports_render_without_error():
     assert "Cross-Competitor Insights" in a and "Per-HCP Drill-Down" not in a
     assert "Most discussed by distinct doctors" in a
     assert "Plain-Language Guide" in b
+
+
+def test_visible_claims_drops_coi():
+    claims = [
+        {"speaker_name": "A", "competitor": "Wegovy",
+         "verbatim_quote": "Semaglutid senkt das Gewicht deutlich.",
+         "statement": "efficacy"},
+        {"speaker_name": "B", "competitor": "Wegovy",
+         "verbatim_quote": ("Ich erhalte Forschungsgelder von Novo Nordisk. "
+                            "Ich halte auch Aktien der Firma."),
+         "statement": "receives funding and holds stocks"},
+    ]
+    out = mod._visible_claims(claims)
+    assert len(out) == 1 and out[0]["speaker_name"] == "A"
