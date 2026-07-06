@@ -139,22 +139,29 @@ def test_tab_id_slugifies():
     assert mod.tab_id("Most active voices") == "tab-most-active-voices"
 
 
-def test_report_a_has_tabs_and_panels():
+def test_report_a_has_sidebar_and_panels():
     a = mod.build_report_a(SYNTH, 15, "2026-07-03 12:00:00")
-    # progressive-enhancement tab scaffolding
-    assert 'class="tabs"' in a
+    # progressive-enhancement scaffolding preserved
     assert "function showTab" in a
     assert "js-tabs" in a
-    # the overview tab and a per-competitor tab exist as nav + panel
-    assert 'href="#tab-insgesamt"' in a
-    assert 'id="tab-insgesamt"' in a
-    assert 'href="#tab-saxenda-liraglutid"' in a
-    assert 'id="tab-saxenda-liraglutid"' in a
-    # fixed tabs present
+    # two-column sidebar layout markers
+    assert 'class="layout"' in a
+    assert 'class="sidebar"' in a
+    assert 'class="content"' in a
+    # grouped, non-clickable section headers, in order
+    import re as _re
+    labels = _re.findall(r'nav-group-label">([^<]+)<', a)
+    assert labels == ["OVERVIEW", "BY COMPETITOR", "ACROSS ALL DRUGS", "ABOUT"]
+    # items are nav links with matching panel ids
+    assert 'class="nav-item' in a
+    assert 'href="#tab-insgesamt"' in a and 'id="tab-insgesamt"' in a
+    assert 'href="#tab-saxenda-liraglutid"' in a and 'id="tab-saxenda-liraglutid"' in a
+    # all expected item labels present
     for label in ("Insgesamt", "Doctors weighing", "Most active voices", "Methodology"):
         assert label in a
-    # overview shows an aggregate sentiment chart and exec summary text
+    # overview content + substrings the render test relies on
     assert "Overall sentiment" in a
-    # substrings the existing render test relies on still present
     assert "Cross-Competitor Insights" in a
     assert "Most discussed by distinct doctors" in a
+    # the old flat tab bar is gone
+    assert 'class="tabs"' not in a
