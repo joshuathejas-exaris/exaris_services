@@ -47,3 +47,35 @@ def test_normalise_meta_row_builds_name():
            "S_CITY":"Berlin","S_HCP_GROUP":"Innere Medizin","RATING":"A"}
     r = mod.normalise_meta_row(row)
     assert r["name"] == "Anna Berg" and r["specialty"] == "Innere Medizin" and r["rating"] == "A"
+
+def test_aggregate_counts_web_and_pubmed_per_hcp():
+    web = [{"S_CUSTOMER_ID":"10","WEBSITE_ID":"w1","COL_KEYWORDS_ORIG":"obesity","COL_KEYWORDS_EN":"obesity"},
+           {"S_CUSTOMER_ID":"10","WEBSITE_ID":"w2","COL_KEYWORDS_ORIG":"glp-1","COL_KEYWORDS_EN":"glp-1"}]
+    pub = [{"S_CUSTOMER_ID":"10","PMID":"p1","YEAR_VAL":2024,"CF_TREFFER":3}]
+    meta = {"10": {"s_customer_id":"10","name":"A B","firstname":"A","lastname":"B",
+                   "city":"X","specialty":"Y","rating":"A"}}
+    out = mod.aggregate_candidates(web, pub, meta, ["obesity","glp-1"])
+    h = out["10"]
+    assert h["web_candidate_count"] == 2
+    assert h["pubmed_candidate_count"] == 1
+    assert h["pubmed_cf_treffer"] == 3
+    assert h["candidate_score"] == 3   # 2 web + 1 pubmed
+    assert h["pub_by_year"] == {"2024": 1}
+
+def test_aggregate_drops_web_row_failing_token_match():
+    web = [{"S_CUSTOMER_ID":"10","WEBSITE_ID":"w1","COL_KEYWORDS_ORIG":"cardiology","COL_KEYWORDS_EN":"cardiology"}]
+    meta = {"10":{"s_customer_id":"10","name":"A B","firstname":"A","lastname":"B","city":"X","specialty":"Y","rating":"A"}}
+    out = mod.aggregate_candidates(web, [], meta, ["obesity"])
+    assert "10" not in out   # no candidate sources at all
+
+def test_aggregate_excludes_hcp_without_meta():
+    web = [{"S_CUSTOMER_ID":"99","WEBSITE_ID":"w1","COL_KEYWORDS_ORIG":"obesity","COL_KEYWORDS_EN":"obesity"}]
+    out = mod.aggregate_candidates(web, [], {}, ["obesity"])
+    assert out == {}
+
+def test_shortlist_flags_top_n_by_score():
+    hcps = [{"s_customer_id":str(i),"candidate_score":i,"pubmed_cf_treffer":0,"rating":"C"} for i in range(5)]
+    out = mod.shortlist(hcps, top_n=2)
+    flagged = [h for h in out if h["shortlisted"]]
+    assert len(flagged) == 2
+    assert {h["s_customer_id"] for h in flagged} == {"4","3"}
