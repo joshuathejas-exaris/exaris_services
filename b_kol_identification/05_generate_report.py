@@ -19,7 +19,8 @@ PALETTE = {
 
 
 def _esc(s):
-    return (str(s).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;"))
+    return (str(s).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+            .replace('"', "&quot;").replace("'", "&#39;"))
 
 
 def _rgba(hex_color, alpha):
@@ -265,10 +266,10 @@ def build_report_html(data):
 <h2>Executive dashboard</h2>{render_stat_cards(data)}
 <h2>KOL Ranking — Top {top_n}</h2>{render_kol_table(data['hcps'], top_n)}
 {render_rising_stars(data['hcps'], all_years)}
-{render_thematic_heatmap(data['hcps'], data.get('pca_terms', []))}
+{render_thematic_heatmap(data['hcps'], data.get('pca_terms', []), top_n=top_n)}
 {render_regional(data['hcps'])}
 <h2>Collaboration network</h2>{render_network(data['coauthor_edges'], data['comention_edges'], data['hcps'])}
-{render_profiles(data['hcps'], all_years)}
+{render_profiles(data['hcps'], all_years, top_n=top_n)}
 </div></body></html>"""
 
 

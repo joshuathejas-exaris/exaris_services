@@ -29,10 +29,17 @@ def test_network_lists_external_collaborator():
     assert "Ext P" in html
 
 def test_build_report_html_is_selfcontained():
+    import re
     html = mod.build_report_html(DATA)
     assert html.strip().startswith("<!DOCTYPE html>")
-    assert "http://" not in html.split("top_quotes")[0] or "cdn" not in html.lower()
     assert "Anna Berg" in html
+    # No external resources the browser would auto-fetch.
+    assert "<link " not in html          # no stylesheet/font links
+    assert 'src="http' not in html       # no external <script>/<img> sources
+    assert "@import" not in html         # no CSS @import of remote sheets
+    # No external href inside a <link> or <script> tag (a plain quote link is allowed).
+    for tag in re.findall(r"<(?:link|script)\b[^>]*>", html):
+        assert 'href="http' not in tag and 'src="http' not in tag
 
 
 # ── Supplementary tests for the ported renderers (v2 field names) ──────────────
@@ -60,8 +67,13 @@ def test_regional_groups_by_city_with_tier_breakdown():
 
 def test_profiles_render_quotes_and_verified_source_breakdown():
     html = mod.render_profiles(DATA["hcps"], ["2023", "2024"], top_n=10)
-    assert "patient improved" in html
-    assert "3 web" in html or "3</b> web" in html.lower() or "web" in html
+    h = DATA["hcps"][0]
+    # The actual verified quote text must render.
+    assert h["top_quotes"][0]["quote"] in html
+    # The actual verified source counts must render (kol_score + web/pubmed split).
+    assert f'{h["kol_score"]} verified sources' in html
+    assert f'{h["verified_web_count"]} web' in html
+    assert f'{h["verified_pubmed_count"]} pubmed' in html
 
 def test_no_composite_or_digi_fields_leak_into_full_report():
     html = mod.build_report_html(DATA)
