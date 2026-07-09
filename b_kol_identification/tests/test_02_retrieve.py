@@ -4,10 +4,16 @@ _spec = importlib.util.spec_from_file_location("retr", _S)
 mod = importlib.util.module_from_spec(_spec); _spec.loader.exec_module(mod)
 
 def test_web_content_query_has_in_list():
-    sql = mod.build_web_content_query("DB.F.LLM_VALIDATION", ["w1","w2"])
+    sql = mod.build_web_content_query("DB.F.LLM_VALIDATION", ["w1","w2"], "10")
     assert "DB.F.LLM_VALIDATION" in sql
     assert "'w1'" in sql and "'w2'" in sql
     assert "CONTENT" in sql and "WEBSITE_ID" in sql
+
+def test_web_content_query_filters_by_customer_id():
+    # LLM_VALIDATION has one row per (customer, website) -- without this filter, a page
+    # naming several doctors returns duplicate CONTENT rows for every HCP on that page.
+    sql = mod.build_web_content_query("DB.F.LLM_VALIDATION", ["w1"], "O'Brien-10")
+    assert "S_CUSTOMER_ID = 'O''Brien-10'" in sql
 
 def test_pubmed_article_query_selects_title_abstract():
     sql = mod.build_pubmed_article_query("CORE.PUBMED.ARTICLE", ["39000001"])

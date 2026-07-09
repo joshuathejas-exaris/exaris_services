@@ -89,7 +89,10 @@ def render_rising_stars(hcps, all_years):
         return ""
     cards = ""
     for h in stars:
-        recent, prior = _recent_prior(h.get("pub_by_year", {}))
+        # The Rising badge (Stage 04) is computed from verified_pubmed_years, so the
+        # displayed recent/prior/ratio must come from the same (verified) field -- not
+        # the unverified/candidate pub_by_year -- or the numbers won't justify the badge.
+        recent, prior = _recent_prior(h.get("verified_pubmed_years", {}))
         ratio = f"{recent / max(prior, 1):.1f}×" if prior > 0 else "New voice"
         spark = render_sparkline(h.get("pub_by_year", {}), all_years, width=110, height=30)
         themes = "".join(f'<span class="tag">{_esc(t["term_en"])}</span>' for t in h.get("theme_labels", []))

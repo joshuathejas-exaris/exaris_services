@@ -47,14 +47,27 @@ def flag_rising_stars(hcps: list, min_pubs: int, growth: float) -> list:
 
 
 def aggregate_themes(hcp: dict, pca_terms: list, top_n: int = 5) -> list:
+    # 03_wiki_build.py builds the ingest prompt from term_en labels, so claims' "themes"
+    # come back as term_en STRINGS (e.g. "Obesity"), not term_key codes. Resolve each
+    # string back to its term_key so it matches pca_terms[].term_key downstream (the
+    # report's heatmap keys off term_key). Falls through unchanged if a future prompt
+    # ever emits term_key codes directly.
+    en_to_key = {t["term_en"]: t["term_key"] for t in pca_terms}
+    key_to_en = {t["term_key"]: t["term_en"] for t in pca_terms}
     counts = {}
+    fallback_en = {}
     for c in hcp.get("claims", []):
-        for t in c.get("themes", []):
-            counts[t] = counts.get(t, 0) + 1
-    label = {t["term_key"]: t["term_en"] for t in pca_terms}
-    ranked = sorted(({"term_key": k, "term_en": label.get(k, k), "count": v}
+        for s in c.get("themes", []):
+            k = en_to_key.get(s, s)
+            counts[k] = counts.get(k, 0) + 1
+            fallback_en.setdefault(k, s)
+    ranked = sorted(({"term_key": k, "term_en": key_to_en.get(k, fallback_en.get(k, k)), "count": v}
                      for k, v in counts.items()), key=lambda x: x["count"], reverse=True)
     return ranked[:top_n]
+
+
+def drop_zero_score(hcps: list) -> list:
+    return [h for h in hcps if h.get("kol_score", 0) > 0]
 
 
 def top_quotes(hcp: dict, n: int = 3) -> list:
@@ -154,6 +167,7 @@ def main():
     pca_terms = data["pca_terms"]
 
     hcps = score_hcps(data["hcps"])
+    hcps = drop_zero_score(hcps)
     hcps = assign_tiers(hcps, float(sc["tier_a_percentile"]), float(sc["tier_b_percentile"]))
     hcps = flag_rising_stars(hcps, int(sc["rising_star_min_pubs"]), float(sc["rising_star_growth"]))
     for h in hcps:

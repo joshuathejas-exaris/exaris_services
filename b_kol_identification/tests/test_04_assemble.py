@@ -16,10 +16,19 @@ def test_rising_star_new_voice_on_verified_years():
     assert out[0]["rising_star"] is True
 
 def test_aggregate_themes_counts_from_claims():
-    hcp = {"claims":[{"themes":["CF_OBESITY","CF_GLP1"]},{"themes":["CF_OBESITY"]}]}
+    # Production's ingest prompt is built from term_en labels (03_wiki_build.py), so
+    # claims' "themes" come back as term_en STRINGS (e.g. "Obesity"), never term_key codes.
+    hcp = {"claims":[{"themes":["Obesity","GLP-1"]},{"themes":["Obesity"]}]}
     terms = [{"term_key":"CF_OBESITY","term_en":"Obesity"},{"term_key":"CF_GLP1","term_en":"GLP-1"}]
     out = mod.aggregate_themes(hcp, terms, top_n=5)
     assert out[0]["term_key"] == "CF_OBESITY" and out[0]["count"] == 2
+
+def test_drop_zero_score_removes_unverified():
+    hcps = [{"s_customer_id":"1","kol_score":0},
+            {"s_customer_id":"2","kol_score":3},
+            {"s_customer_id":"3"}]  # missing kol_score treated as 0
+    out = mod.drop_zero_score(hcps)
+    assert [h["s_customer_id"] for h in out] == ["2"]
 
 def test_coauthor_query_has_pmid_in_list():
     sql = mod.build_coauthor_query("CORE.PUBMED.AUTHOR", ["39000001"])

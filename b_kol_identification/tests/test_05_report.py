@@ -55,9 +55,28 @@ def test_rising_stars_only_lists_flagged_hcps():
 def test_rising_stars_empty_when_none_flagged():
     assert mod.render_rising_stars(DATA["hcps"], ["2023", "2024"]) == ""
 
+def test_rising_stars_numbers_come_from_verified_pubmed_years_not_pub_by_year():
+    # The Rising badge (Stage 04) is computed from verified_pubmed_years, so the card's
+    # recent/prior/ratio text must be computed from that field too -- not from the
+    # unverified/candidate pub_by_year -- or the displayed numbers won't justify the badge.
+    h = {**DATA["hcps"][0], "rising_star": True,
+         "pub_by_year": {"2020": 100, "2021": 100},
+         "verified_pubmed_years": {"2024": 2, "2025": 1}}
+    html = mod.render_rising_stars([h], ["2020", "2021", "2024", "2025"])
+    assert "<b>3</b> recent" in html and "<b>0</b> prior" in html
+    assert "100" not in html
+
 def test_thematic_heatmap_uses_theme_labels_not_cf_by_term():
     html = mod.render_thematic_heatmap(DATA["hcps"], DATA["pca_terms"], top_n=20)
     assert "Anna Berg" in html and "Obesity" in html and "5" in html
+
+def test_thematic_heatmap_cell_is_populated_not_blank():
+    # theme_labels[].term_key ("CF_OBESITY") must match pca_terms[].term_key so the
+    # HCP's count actually lands in a heatmap cell instead of every lookup missing.
+    html = mod.render_thematic_heatmap(DATA["hcps"], DATA["pca_terms"], top_n=20)
+    assert "background:rgba(" in html      # a real (non-"transparent") cell was rendered
+    assert ">5</td>" in html               # the count itself is visible in that cell
+    assert 'background:transparent">5</td>' not in html
 
 def test_regional_groups_by_city_with_tier_breakdown():
     hcps = DATA["hcps"] + [{**DATA["hcps"][0], "s_customer_id": "12", "name": "Carla Weiss",
