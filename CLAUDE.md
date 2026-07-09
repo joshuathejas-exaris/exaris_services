@@ -18,10 +18,7 @@ This repo contains Exaris pharma pipeline services, one per folder.
 
 ## Repo conventions
 
-- `shared/` at the repo root contains Snowflake connection utilities
-  (`ParameterManager`, `SecretReader`) used by all services. Do not modify it.
-- Each stage file must add `sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))` 
-  so it can import from `shared/`.
+- Each service is self-contained — no cross-service imports
 - JSON checkpoints go in `<service>/data/` (gitignored)
 - HTML/Excel outputs go in `<service>/results/` (gitignored)
 - Agent coordination via `TASKS.md` at repo root
