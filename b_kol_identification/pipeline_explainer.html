@@ -103,7 +103,7 @@
 <header>
   <div class="kicker">Service 2.1 · KOL Identification &amp; Mapping</div>
   <h1>How the pipeline works</h1>
-  <div class="ctx">A step-by-step walkthrough for colleagues: how we rank the true opinion leaders for an indication by counting the <b>genuinely relevant sources</b> attributed to each doctor — and why we spend LLM budget only on the handful of candidates who could actually make the top list.</div>
+  <div class="ctx">A step-by-step walkthrough: how we rank the true opinion leaders for an indication by counting the <b>genuinely relevant sources</b> attributed to each doctor — and why we spend LLM budget only on the handful of candidates who could actually make the top list.</div>
 </header>
 
 <div class="card lead">
@@ -281,13 +281,13 @@
 <table>
   <thead><tr><th class="mono">Table</th><th>Location</th><th>Used in</th><th>What it gives us</th></tr></thead>
   <tbody>
-    <tr><td class="mono">CONTENT_FRAME_SPEC</td><td>CUST_NOVO · V1</td><td>01</td><td>Indication terms (<code>PCA='X'</code>) that define what "on-topic" means</td></tr>
-    <tr><td class="mono">LLM_VALIDATION</td><td>CUST_NOVO · FINAL</td><td>01, 02</td><td><b>Web gate</b> — <code>NEAR_BY, IS_OLD, IS_DOCTOR, IN_RELATION</code>, keywords + full <code>CONTENT</code> + <code>WEBSITE_ID, S_CUSTOMER_ID</code></td></tr>
+    <tr><td class="mono">CONTENT_FRAME_SPEC</td><td>CUST_TC · V1</td><td>01</td><td>Indication terms (<code>PCA='X'</code>) that define what "on-topic" means</td></tr>
+    <tr><td class="mono">LLM_VALIDATION</td><td>CUST_TC · FINAL</td><td>01, 02</td><td><b>Web gate</b> — <code>NEAR_BY, IS_OLD, IS_DOCTOR, IN_RELATION</code>, keywords + full <code>CONTENT</code> + <code>WEBSITE_ID, S_CUSTOMER_ID</code></td></tr>
     <tr><td class="mono">PUBMED_ARTICLE_MAPPING</td><td>CUST_TC · TMP</td><td>01</td><td>Links doctor ↔ PubMed article; <code>MERGE_RESULT&gt;1</code> = <b>verified author</b></td></tr>
     <tr><td class="mono">PUBMED_CONTENT_FRAME_SINGLE_TBL</td><td>CUST_TC · TMP</td><td>01</td><td>PMID, <code>YEAR</code>, and CF-term flags — first-level PubMed relevance</td></tr>
     <tr><td class="mono">CORE.PUBMED.ARTICLE</td><td>CORE · PUBMED</td><td>02</td><td>The article text: <code>TITLE, ABSTRACT, YEAR_VAL, JOURNAL_NAME</code></td></tr>
     <tr><td class="mono">CORE.PUBMED.AUTHOR</td><td>CORE · PUBMED</td><td>04</td><td>All authors per PMID — builds the co-author network incl. external doctors</td></tr>
-    <tr><td class="mono">CUSTOMER_SOURCE + RATING_RESULT_FINAL</td><td>CUST_NOVO</td><td>01</td><td>HCP master record — name, city, specialty, A/B/C/D quality rating</td></tr>
+    <tr><td class="mono">CUSTOMER_SOURCE + RATING_RESULT_FINAL</td><td>CUST_TC</td><td>01</td><td>HCP master record — name, city, specialty, A/B/C/D quality rating</td></tr>
   </tbody>
 </table>
 <p class="muted" style="font-size:13px">Stages 03–05 don't touch Snowflake; they work purely on the JSON checkpoints. The pipeline reads across three databases (<code>CUST_NOVO</code>, <code>CUST_TC</code>, <code>CORE</code>) in one connection via fully-qualified names.</p>
