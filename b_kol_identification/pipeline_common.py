@@ -68,16 +68,15 @@ def name_matches(extracted: str, first: str, last: str) -> bool:
     return first_ok
 
 
-def make_bedrock_client(config):
-    """Create a Bedrock runtime client from the [comp_hcp] config block."""
-    cfg = config["comp_hcp"]
-    region = cfg.get("bedrock_region", "eu-central-1")
-    session = boto3.Session(profile_name=cfg["bedrock_profile"], region_name=region)
-    return session.client("bedrock-runtime")
+def make_bedrock_client(profile: str, region: str = "eu-central-1"):
+    """Create a Bedrock runtime client for the given AWS profile and region."""
+    return boto3.Session(profile_name=profile).client(
+        "bedrock-runtime", region_name=region
+    )
 
 
-def call_bedrock_json(bedrock, model_id: str, prompt: str, temperature: float,
-                      max_tokens: int, attempts: int = 3, backoff: int = 2) -> dict:
+def call_bedrock_json(bedrock, model_id: str, prompt: str, temperature: float = 0.0,
+                      max_tokens: int = 4096, attempts: int = 3, backoff: int = 2) -> dict:
     """Call Bedrock converse and parse a JSON object, retrying on any failure."""
     last_err: Optional[Exception] = None
     for attempt in range(1, attempts + 1):
@@ -104,7 +103,6 @@ def connect_snowflake(aws_profile: str, warehouse: str, database: str):
     Secret name is auto-discovered from SSM: /exaris/main-stack-name →
     /{stack}/snowflake/secret-name.
     """
-    import boto3
     import snowflake.connector
     from cryptography.hazmat.primitives import serialization
     from shared.parameter_manager import ParameterManager
