@@ -79,3 +79,13 @@ def test_no_composite_or_digi_fields_leak_into_full_report():
     html = mod.build_report_html(DATA)
     assert "composite_score" not in html
     assert "digi_score" not in html.lower()
+
+
+def test_write_excel_creates_one_row_per_kol(tmp_path):
+    out = tmp_path / "k.xlsx"
+    mod.write_excel(DATA, str(out))
+    import openpyxl
+    wb = openpyxl.load_workbook(out); ws = wb.active
+    headers = [c.value for c in ws[1]]
+    assert "Name" in headers and "Verified sources" in headers and "Tier" in headers
+    assert ws.max_row == 1 + len(DATA["hcps"])

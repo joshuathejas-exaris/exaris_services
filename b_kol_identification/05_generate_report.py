@@ -273,6 +273,24 @@ def build_report_html(data):
 </div></body></html>"""
 
 
+def write_excel(data: dict, path: str) -> None:
+    import openpyxl
+    wb = openpyxl.Workbook(); ws = wb.active; ws.title = "KOLs"
+    headers = ["Rank", "Name", "Specialty", "City", "Tier", "Rising star",
+               "Verified sources", "Web", "PubMed", "Latest year", "Top themes",
+               "Representative quote", "Source URL"]
+    ws.append(headers)
+    for i, h in enumerate(data["hcps"], 1):
+        q = (h.get("top_quotes") or [{}])[0]
+        ws.append([i, h["name"], h["specialty"], h["city"], h.get("tier", ""),
+                   "yes" if h.get("rising_star") else "", h.get("kol_score", 0),
+                   h.get("verified_web_count", 0), h.get("verified_pubmed_count", 0),
+                   h.get("latest_year", ""),
+                   ", ".join(t["term_en"] for t in h.get("theme_labels", [])[:5]),
+                   q.get("quote", ""), q.get("url", "")])
+    wb.save(path)
+
+
 def main():
     import argparse
     p = argparse.ArgumentParser(); p.add_argument("--force", action="store_true")
@@ -285,7 +303,9 @@ def main():
     with open(html_path, "w", encoding="utf-8") as f:
         f.write(build_report_html(data))
     log.info(f"Wrote {html_path}")
-    # Excel written in Task 8
+    xlsx_path = os.path.join(_DIR, "results", f"kol_report_{ts}.xlsx")
+    write_excel(data, xlsx_path)
+    log.info(f"Wrote {xlsx_path}")
 
 if __name__ == "__main__":
     main()
