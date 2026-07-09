@@ -39,3 +39,18 @@ def test_comention_edges_from_mentions():
              "mentioned":[{"name":"Karl Neu","s_customer_id":"20"},{"name":"X","s_customer_id":""}]}]
     edges = mod.build_comention_edges(hcps)
     assert {"from":"10","to":"20","from_name":"Anna Berg","to_name":"Karl Neu","count":1} in edges
+
+def test_coauthor_edges_no_double_count_for_internal_pair():
+    author_rows = [{"PMID":"p1","FIRSTNAME":"Anna","LASTNAME":"Berg"},
+                   {"PMID":"p1","FIRSTNAME":"Karl","LASTNAME":"Neu"}]
+    verified_by_pmid = {"p1": ["1", "2"]}   # ONE shared pmid
+    roster = [{"s_customer_id":"1","firstname":"Anna","lastname":"Berg","name":"Anna Berg"},
+              {"s_customer_id":"2","firstname":"Karl","lastname":"Neu","name":"Karl Neu"}]
+    edges = mod.build_coauthor_edges(author_rows, verified_by_pmid, roster)
+    internal = [e for e in edges if not e["b_external"]]
+    assert len(internal) == 1 and internal[0]["shared_pmids"] == 1
+
+def test_rising_star_not_flagged_for_established_author():
+    hcps = [{"verified_pubmed_years": {"2023": 1, "2025": 3}}]  # max 2025; a prior 2023 pub
+    out = mod.flag_rising_stars(hcps, min_pubs=3, growth=1000.0)
+    assert out[0]["rising_star"] is False

@@ -38,8 +38,8 @@ def flag_rising_stars(hcps: list, min_pubs: int, growth: float) -> list:
     for h in hcps:
         years = {int(y): int(c) for y, c in h.get("verified_pubmed_years", {}).items() if str(y).isdigit()}
         cur = max(years) if years else datetime.now().year
-        recent = sum(c for y, c in years.items() if y >= cur - 2)
-        prior = sum(c for y, c in years.items() if y < cur - 2)
+        recent = sum(c for y, c in years.items() if y >= cur - 1)
+        prior = sum(c for y, c in years.items() if y < cur - 1)
         new_voice = recent >= min_pubs and prior == 0
         accel = (recent / max(prior, 1)) >= growth and recent >= min_pubs
         out.append({**h, "rising_star": bool(new_voice or accel)})
@@ -101,6 +101,9 @@ def build_coauthor_edges(author_rows: list, verified_by_pmid: dict, roster: list
                 match = next((rr for rr in roster
                               if name_matches(author_name, rr.get("firstname", ""), rr.get("lastname", ""))), None)
                 if match:
+                    # canonical order: count each unordered pair's shared pmid once
+                    if aid >= match["s_customer_id"]:
+                        continue
                     key = tuple(sorted([aid, match["s_customer_id"]])) + (False,)
                     edge_counts[key] = edge_counts.get(key, {"a_name": a["name"], "b_name": match["name"]})
                     edge_counts[key]["n"] = edge_counts[key].get("n", 0) + 1
