@@ -100,6 +100,26 @@ def test_no_composite_or_digi_fields_leak_into_full_report():
     assert "digi_score" not in html.lower()
 
 
+def test_report_has_grouped_sidebar_nav():
+    html = mod.build_report_html(DATA)
+    assert 'class="sidebar"' in html
+    for group in ("OVERVIEW", "ANALYSIS", "PROFILES"):
+        assert group in html
+    for item in ("Executive Dashboard", "KOL Ranking", "Rising Stars",
+                 "Thematic Distribution", "Regional Distribution",
+                 "Collaboration Network", "KOL Profiles"):
+        assert item in html
+
+def test_report_has_exactly_one_active_panel_and_tab_script():
+    html = mod.build_report_html(DATA)
+    assert html.count('class="panel active"') == 1   # first panel active on load
+    assert "function showTab(" in html
+    assert "js-tabs" in html
+
+def test_tab_id_slugifies_label():
+    assert mod.tab_id("Rising Stars") == "tab-rising-stars"
+
+
 def test_year_axis_is_fixed_span_ending_at_anchor():
     data = {"anchor_year": 2023, "pub_history_years": 20, "hcps": []}
     axis = mod.build_year_axis(data)

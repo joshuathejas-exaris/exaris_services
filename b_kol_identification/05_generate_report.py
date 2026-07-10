@@ -3,7 +3,7 @@ Stage 05: Generate the KOL report (HTML top-25) + Excel.
 Reads:  data/kol_final.json
 Writes: results/kol_report_<ts>.html  and  results/kol_report_<ts>.xlsx
 """
-import configparser, json, logging, os, sys
+import configparser, json, logging, os, re, sys
 from datetime import datetime
 
 logging.basicConfig(format="%(asctime)s [%(levelname)s] %(message)s", level=logging.INFO)
@@ -234,6 +234,61 @@ def build_year_axis(data):
     return [str(y) for y in present]
 
 
+def tab_id(label: str) -> str:
+    slug = re.sub(r"[^a-z0-9]+", "-", label.lower()).strip("-")
+    return "tab-" + (slug or "x")
+
+
+TAB_SCRIPT = """
+<script>
+function showTab(id){
+  var ps = document.querySelectorAll('.panel');
+  for (var i = 0; i < ps.length; i++){ ps[i].classList.toggle('active', ps[i].id === id); }
+  var ns = document.querySelectorAll('.nav-item');
+  for (var j = 0; j < ns.length; j++){
+    var on = ns[j].getAttribute('href') === '#' + id;
+    ns[j].classList.toggle('active', on);
+    if (on) { ns[j].setAttribute('aria-current', 'page'); }
+    else { ns[j].removeAttribute('aria-current'); }
+  }
+  return false;
+}
+document.addEventListener('DOMContentLoaded', function(){
+  document.body.classList.add('js-tabs');
+  var f = document.querySelector('.panel');
+  if (f) { showTab(f.id); }
+});
+</script>
+"""
+
+
+def _render_sidebar(groups):
+    """groups: list of (group_label, [(item_label, panel_html), ...]). Sticky left nav
+    beside a content pane of panels; first item active on load; degrades to full scroll
+    without JS. Empty groups/items are skipped."""
+    nav = ['<nav class="sidebar" role="tablist" aria-label="Report sections">']
+    panels = []
+    first = True
+    for group_label, items in groups:
+        items = [it for it in items if it and it[1]]
+        if not items:
+            continue
+        nav.append(f'<div class="nav-group-label">{_esc(group_label)}</div>')
+        for item_label, body in items:
+            tid = tab_id(item_label)
+            active = " active" if first else ""
+            current = ' aria-current="page"' if first else ""
+            nav.append(f'<a class="nav-item{active}" role="tab" id="{tid}-btn" '
+                       f'href="#{tid}" aria-controls="{tid}"{current} '
+                       f'onclick="return showTab(\'{tid}\')">{_esc(item_label)}</a>')
+            panels.append(f'<section class="panel{active}" role="tabpanel" id="{tid}" '
+                          f'aria-labelledby="{tid}-btn">\n{body}\n</section>')
+            first = False
+    nav.append("</nav>")
+    content = '<main class="content">\n' + "\n".join(panels) + "\n</main>"
+    return '<div class="layout">\n' + "\n".join(nav) + "\n" + content + "\n</div>"
+
+
 def build_report_html(data):
     all_years = build_year_axis(data)
     top_n = 25
@@ -270,21 +325,49 @@ def build_report_html(data):
       .city-bar{{height:16px;display:flex;border-radius:3px;overflow:hidden;flex-shrink:0}}
       .quote{{font-size:12px;font-style:italic;padding:4px 8px;margin-top:6px;color:{PALETTE['ink']}}}
       .quote a{{font-style:normal;font-size:11px;color:{PALETTE['accent']}}}
-      @media(max-width:720px){{.stats{{grid-template-columns:repeat(2,1fr)}}}}
+      .layout{{display:flex;gap:28px;align-items:flex-start;margin:18px 0 8px}}
+      .sidebar{{flex:0 0 210px;position:sticky;top:16px;align-self:flex-start}}
+      .content{{flex:1 1 auto;min-width:0}}
+      .nav-group-label{{text-transform:uppercase;letter-spacing:.6px;font-size:11px;
+        font-weight:700;color:{PALETTE['muted']};margin:16px 0 6px}}
+      .nav-group-label:first-child{{margin-top:0}}
+      .nav-item{{display:block;padding:6px 10px;margin:2px 0;border-radius:6px;
+        color:{PALETTE['ink']};font-size:14px;text-decoration:none;border-left:3px solid transparent}}
+      .nav-item:hover{{background:#eef2f7;color:{PALETTE['accent']}}}
+      .nav-item.active{{background:#eef4fb;color:{PALETTE['accent']};font-weight:600;
+        border-left-color:{PALETTE['accent']}}}
+      body.js-tabs .panel{{display:none}} body.js-tabs .panel.active{{display:block}}
+      .content h2:first-child{{margin-top:0;border-top:none;padding-top:0}}
+      @media(max-width:720px){{.stats{{grid-template-columns:repeat(2,1fr)}}
+        .layout{{flex-direction:column;gap:8px}} .sidebar{{position:static;flex-basis:auto;width:100%}}}}
     """
+    top = data["hcps"]
+    groups = [
+        ("OVERVIEW", [
+            ("Executive Dashboard", f'<h2>Executive dashboard</h2>{render_stat_cards(data)}'),
+            ("KOL Ranking", f'<h2>KOL Ranking — Top {top_n}</h2>{render_kol_table(top, top_n)}'),
+        ]),
+        ("ANALYSIS", [
+            ("Rising Stars", render_rising_stars(top, all_years)
+                or '<h2>Rising Stars</h2><p class="muted">No rising stars identified.</p>'),
+            ("Thematic Distribution", render_thematic_heatmap(top, data.get("pca_terms", []), top_n=top_n)),
+            ("Regional Distribution", render_regional(top)),
+            ("Collaboration Network",
+             f'<h2>Collaboration network</h2>{render_network(data["coauthor_edges"], data["comention_edges"], top)}'),
+        ]),
+        ("PROFILES", [
+            ("KOL Profiles", render_profiles(top, all_years, top_n=top_n)),
+        ]),
+    ]
+    header = (f'<h1>KOL Identification — {_esc(data["indication"])}</h1>'
+              f'<p class="muted">Client drug: {_esc(data["client_drug"])} · '
+              f'generated {_esc(data["generated_at"])}</p>')
+    body = header + "\n" + _render_sidebar(groups) + "\n" + TAB_SCRIPT
     return f"""<!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>KOL Report — {_esc(data['indication'])}</title><style>{css}</style></head>
 <body><div class="wrap">
-<h1>KOL Identification — {_esc(data['indication'])}</h1>
-<p class="muted">Client drug: {_esc(data['client_drug'])} · generated {_esc(data['generated_at'])}</p>
-<h2>Executive dashboard</h2>{render_stat_cards(data)}
-<h2>KOL Ranking — Top {top_n}</h2>{render_kol_table(data['hcps'], top_n)}
-{render_rising_stars(data['hcps'], all_years)}
-{render_thematic_heatmap(data['hcps'], data.get('pca_terms', []), top_n=top_n)}
-{render_regional(data['hcps'])}
-<h2>Collaboration network</h2>{render_network(data['coauthor_edges'], data['comention_edges'], data['hcps'])}
-{render_profiles(data['hcps'], all_years, top_n=top_n)}
+{body}
 </div></body></html>"""
 
 
