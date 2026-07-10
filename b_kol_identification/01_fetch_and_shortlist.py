@@ -52,6 +52,48 @@ WHERE m.MERGE_RESULT > 1
 """.strip()
 
 
+def build_anchor_year_query(pubmed_cf_flag: str) -> str:
+    return f"SELECT MAX(YEAR_VAL) AS ANCHOR FROM {pubmed_cf_flag}"
+
+
+def build_pubmed_history_query(pubmed_mapping: str, pubmed_cf_flag: str,
+                               cf_cols: list, history_years: int, anchor_year: int) -> str:
+    cutoff = anchor_year - history_years
+    cf_any = " OR ".join(f"cf.{c} > 0" for c in cf_cols) or "FALSE"
+    return f"""
+SELECT m.S_CUSTOMER_ID, cf.YEAR_VAL AS YEAR_VAL, COUNT(*) AS N
+FROM {pubmed_mapping} m
+JOIN {pubmed_cf_flag} cf ON cf.PMID = m.PMID
+WHERE m.MERGE_RESULT > 1
+  AND ({cf_any})
+  AND cf.YEAR_VAL >= {cutoff}
+GROUP BY m.S_CUSTOMER_ID, cf.YEAR_VAL
+""".strip()
+
+
+def build_pub_history_map(history_rows: list) -> dict:
+    def _g(row, k):
+        v = row.get(k)
+        return v if v is not None else row.get(k.lower())
+    out = {}
+    for r in history_rows:
+        cid = str(_g(r, "S_CUSTOMER_ID") or "")
+        yr = str(_g(r, "YEAR_VAL") or "")
+        n = int(_g(r, "N") or 0)
+        if not cid or not yr:
+            continue
+        out.setdefault(cid, {})[yr] = n
+    return out
+
+
+def apply_pub_history(hcps: list, history_map: dict) -> list:
+    """Override each HCP's display-only pub_by_year with the 20-year history counts.
+    Scoring (candidate_score / pubmed_articles) is untouched."""
+    for h in hcps:
+        h["pub_by_year"] = history_map.get(str(h.get("s_customer_id", "")), {})
+    return hcps
+
+
 def build_hcp_meta_query(customer_source: str, rating_result_final: str) -> str:
     return f"""
 SELECT cs.S_CUSTOMER_ID, cs.S_FIRSTNAME, cs.S_LASTNAME,
@@ -178,10 +220,22 @@ def main():
                 term_ilike_predicate(term_texts), int(fn["in_relation_min"])))
     web_rows = cur.fetchall()
 
-    log.info("Q3: pubmed candidates...")
+    log.info("Q1b: anchor year (max YEAR_VAL in PubMed CF table)...")
+    cur.execute(build_anchor_year_query(tb["pubmed_cf_flag"]))
+    _arow = cur.fetchone()
+    anchor_year = int((_arow.get("ANCHOR") or _arow.get("anchor")) or datetime.now().year) \
+        if _arow else datetime.now().year
+    log.info(f"anchor_year = {anchor_year}")
+
+    log.info("Q3: pubmed candidates (5y scoring window)...")
     cur.execute(build_pubmed_candidates_query(tb["pubmed_mapping"], tb["pubmed_cf_flag"],
-                cf_cols, int(fn["pubmed_window_years"]), datetime.now().year))
+                cf_cols, int(fn["pubmed_window_years"]), anchor_year))
     pubmed_rows = cur.fetchall()
+
+    log.info("Q3b: pubmed 20y history (display only)...")
+    cur.execute(build_pubmed_history_query(tb["pubmed_mapping"], tb["pubmed_cf_flag"],
+                cf_cols, int(fn["pub_history_years"]), anchor_year))
+    history_rows = cur.fetchall()
 
     log.info("Q4: HCP metadata...")
     cur.execute(build_hcp_meta_query(tb["customer_source"], tb["rating_result_final"]))
@@ -190,6 +244,7 @@ def main():
     cur.close(); conn.close()
 
     hcps = list(aggregate_candidates(web_rows, pubmed_rows, meta_map, term_texts).values())
+    hcps = apply_pub_history(hcps, build_pub_history_map(history_rows))
     hcps = shortlist(hcps, int(fn["top_n_candidates"]))
     n_short = sum(h["shortlisted"] for h in hcps)
     log.info(f"{len(hcps)} candidate HCPs; {n_short} shortlisted")
@@ -200,6 +255,7 @@ def main():
     with open(out_path, "w", encoding="utf-8") as f:
         json.dump({"indication": inp["indication"], "client_drug": inp["client_drug"],
                    "generated_at": datetime.now().isoformat(timespec="seconds"),
+                   "anchor_year": anchor_year, "pub_history_years": int(fn["pub_history_years"]),
                    "pca_terms": pca_terms, "hcps": hcps}, f, ensure_ascii=False, indent=2)
     log.info(f"Wrote {out_path}")
 

@@ -73,6 +73,36 @@ def test_aggregate_excludes_hcp_without_meta():
     out = mod.aggregate_candidates(web, [], {}, ["obesity"])
     assert out == {}
 
+def test_anchor_year_query_reads_max_year_from_cf_table():
+    sql = mod.build_anchor_year_query("DB.F.PUBMED_CF")
+    assert "MAX(YEAR_VAL)" in sql.upper()
+    assert "DB.F.PUBMED_CF" in sql
+
+def test_pubmed_history_query_windows_20y_back_from_anchor_and_counts_per_year():
+    sql = mod.build_pubmed_history_query(
+        "DB.T.PUBMED_ARTICLE_MAPPING", "DB.T.PUBMED_CF", ["CF_OBESITY", "CF_GLP1"], 20, 2023)
+    assert "MERGE_RESULT > 1" in sql
+    assert "CF_OBESITY" in sql and "CF_GLP1" in sql
+    assert "2003" in sql                       # anchor(2023) - history(20)
+    assert "GROUP BY" in sql.upper()
+    assert "COUNT(" in sql.upper()
+
+def test_build_pub_history_map_counts_per_hcp_per_year():
+    rows = [{"S_CUSTOMER_ID": "10", "YEAR_VAL": 2011, "N": 2},
+            {"S_CUSTOMER_ID": "10", "YEAR_VAL": 2023, "N": 5},
+            {"S_CUSTOMER_ID": "11", "YEAR_VAL": 2020, "N": 1}]
+    m = mod.build_pub_history_map(rows)
+    assert m["10"] == {"2011": 2, "2023": 5}
+    assert m["11"] == {"2020": 1}
+
+def test_apply_pub_history_overrides_pub_by_year_display_field():
+    hcps = [{"s_customer_id": "10", "pub_by_year": {"2023": 1}, "candidate_score": 3},
+            {"s_customer_id": "99", "pub_by_year": {"2022": 9}, "candidate_score": 1}]
+    out = mod.apply_pub_history(hcps, {"10": {"2011": 2, "2023": 5}})
+    assert out[0]["pub_by_year"] == {"2011": 2, "2023": 5}   # replaced from history
+    assert out[1]["pub_by_year"] == {}                       # no history -> empty
+    assert out[0]["candidate_score"] == 3                    # scoring untouched
+
 def test_shortlist_flags_top_n_by_score():
     hcps = [{"s_customer_id":str(i),"candidate_score":i,"pubmed_cf_treffer":0,"rating":"C"} for i in range(5)]
     out = mod.shortlist(hcps, top_n=2)
