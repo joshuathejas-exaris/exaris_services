@@ -105,7 +105,7 @@ Tests (mock Snowflake/Bedrock):
 | `04_assemble_kols.py` | `kol_score = verified_web_count + verified_pubmed_count`; tiers A/B/C from the score-distribution percentile thresholds (`tier_a_percentile`, `tier_b_percentile`); Rising Stars (v1 logic — `new_voice` / `accelerating`) computed on verified-relevant PubMed articles by year only; theme aggregation from verified claims; collaboration network from `CORE.PUBMED.AUTHOR` co-authors (incl. non-mapped external authors) + web co-mentions from `mentioned_hcps`. |
 | `05_generate_report.py` | Self-contained HTML (no CDN/fonts/network, inline SVG sparklines) — executive dashboard, KOL ranking (top 25), Rising Stars, Thematic heatmap, Regional distribution, Collaboration network, Individual KOL profiles with verbatim quotes. Also writes an Excel export (one row per KOL). |
 | `pipeline_common.py` | Shared helpers reused from Service A's pattern: `call_bedrock_json`, `strip_json_fences`, `parse_json_object`, `make_bedrock_client`, `name_matches`, `normalize_name`, `connect_snowflake`. |
-| `config.ini` | All tunable params (Snowflake, tables, terms, funnel, Bedrock, scoring, report). |
+| `config.ini` | All tunable params (Snowflake connection + schema knobs, terms, funnel, Bedrock, scoring, report). Table FQNs are derived at runtime by `pipeline_common.resolve_tables`, not hand-maintained here. |
 | `tests/` | Pytest unit tests, one file per stage + `pipeline_common` (mock Snowflake/Bedrock). |
 | `data/` | JSON checkpoints (gitignored). `input.json` seeds the run (`indication`, `client_drug`); not gitignored. |
 | `results/` | HTML + Excel outputs (gitignored). |
@@ -117,14 +117,15 @@ Tests (mock Snowflake/Bedrock):
 
 | Table (config key) | Database.Schema | Purpose | Key columns |
 |---|---|---|---|
-| `llm_validation` | `CUST_NOVO.ADIPOS_AMBU_FINAL` | Web gate + full `CONTENT` + keywords | `NEAR_BY, IS_OLD, IS_DOCTOR, IN_RELATION, COL_KEYWORDS_ORIG, COL_KEYWORDS_EN, WEBSITE_ID, S_CUSTOMER_ID, CONTENT, URL` |
-| `content_frame_spec` | `CUST_NOVO.ADIPOS_AMBU_V1` | PCA / CF terms (Stage 01 Q1) | `COL_MAP, EN_TERM_1, PCA` |
-| `customer_source` | `CUST_NOVO.ADIPOS_AMBU_V1` | HCP master record | `S_CUSTOMER_ID, S_FIRSTNAME, S_LASTNAME, S_CITY, S_HCP_GROUP` |
-| `rating_result_final` | `CUST_NOVO.ADIPOS_AMBU_FINAL` | HCP A/B/C/D rating | `S_CUSTOMER_ID, RATING` |
+| `llm_validation` | `CUST_TC.ADIPOS_AMBU_FINAL` | Web gate + full `CONTENT` + keywords | `NEAR_BY, IS_OLD, IS_DOCTOR, IN_RELATION, COL_KEYWORDS_ORIG, COL_KEYWORDS_EN, WEBSITE_ID, S_CUSTOMER_ID, CONTENT, URL` |
+| `rating_result_final` | `CUST_TC.ADIPOS_AMBU_FINAL` | HCP A/B/C/D rating | `S_CUSTOMER_ID, RATING` |
+| `pubmed_cf_flag` | `CUST_TC.ADIPOS_AMBU_FINAL` (`PUBMED_CONTENT_FRAME_SINGLE_TBL`) | PubMed CF-term flags | `PMID, YEAR`, one column per CF term |
+| `websites_vertical_all_source` | `CUST_TC.ADIPOS_AMBU_FINAL` | Web-source URLs (Stage 02 join) | `WEBSITE_ID, URL` |
+| `content_frame_spec` | `CUST_TC.ADIPOS_AMBU_TMP` | PCA / CF terms (Stage 01 Q1) | `COL_MAP, EN_TERM_1, PCA` |
+| `customer_source` | `CUST_TC.ADIPOS_AMBU_TMP` | HCP master record | `S_CUSTOMER_ID, S_FIRSTNAME, S_LASTNAME, S_CITY, S_HCP_GROUP` |
 | `pubmed_mapping` | `CUST_TC.ADIPOS_AMBU_TMP` (`PUBMED_ARTICLE_MAPPING`) | Verified PubMed authorship | `S_CUSTOMER_ID, PMID, MERGE_RESULT` |
-| `pubmed_cf_flag` | `CUST_TC.ADIPOS_AMBU_TMP` (`PUBMED_CONTENT_FRAME_SINGLE_TBL`) | PubMed CF-term flags | `PMID, YEAR`, one column per CF term |
-| `pubmed_article` | `CORE.PUBMED.ARTICLE` | Article text | `PMID, TITLE, ABSTRACT, YEAR_VAL, JOURNAL_NAME` |
-| `pubmed_author` | `CORE.PUBMED.AUTHOR` | Co-author network (Stage 04) | `PMID, ORCID, FIRSTNAME, LASTNAME, AFFILIATION` |
+| `pubmed_article` | `CORE.PUBMED` (`ARTICLE`) | Article text | `PMID, TITLE, ABSTRACT, YEAR_VAL, JOURNAL_NAME` |
+| `pubmed_author` | `CORE.PUBMED` (`AUTHOR`) | Co-author network (Stage 04) | `PMID, ORCID, FIRSTNAME, LASTNAME, AFFILIATION` |
 
 Specialty (`S_HCP_GROUP`) is displayed only — it is never used to filter or exclude
 candidates; relevance verification does that job.

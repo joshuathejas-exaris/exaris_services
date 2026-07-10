@@ -18,7 +18,7 @@ def _in_list(ids: list) -> str:
 
 def build_web_content_query(llm_validation: str, website_ids: list, s_customer_id) -> str:
     escaped_id = str(s_customer_id).replace("'", "''")
-    return (f"SELECT WEBSITE_ID, URL, CONTENT FROM {llm_validation} "
+    return (f"SELECT WEBSITE_ID, CONTENT FROM {llm_validation} "
             f"WHERE WEBSITE_ID IN ({_in_list(website_ids)}) "
             f"AND S_CUSTOMER_ID = '{escaped_id}'")
 
@@ -65,11 +65,12 @@ def cap_sources(sources: list, max_n: int) -> list:
 
 def main():
     import argparse, snowflake.connector
-    from pipeline_common import connect_snowflake
+    from pipeline_common import connect_snowflake, resolve_tables
     p = argparse.ArgumentParser(); p.add_argument("--force", action="store_true")
     args = p.parse_args()
     cfg = configparser.ConfigParser(); cfg.read(os.path.join(_DIR, "config.ini"))
-    sf, tb, fn = cfg["snowflake"], cfg["tables"], cfg["funnel"]
+    sf, fn = cfg["snowflake"], cfg["funnel"]
+    tb = resolve_tables(sf)
     max_chars = int(fn["max_source_chars"]); max_n = int(fn["max_sources_per_hcp"])
 
     out_path = os.path.join(_DIR, "data", "sources.json")

@@ -35,3 +35,18 @@ def test_make_bedrock_client_passes_profile_and_region():
         "client_name": "bedrock-runtime",
         "region_name": "eu-central-1",
     }
+
+def test_resolve_tables_builds_fqns_from_schema_knobs():
+    sf = {"database": "CUST_TC", "schema_final": "ADIPOS_AMBU_FINAL",
+          "schema_tmp": "ADIPOS_AMBU_TMP"}
+    t = pc.resolve_tables(sf)
+    assert t["llm_validation"] == "CUST_TC.ADIPOS_AMBU_FINAL.LLM_VALIDATION"
+    assert t["rating_result_final"] == "CUST_TC.ADIPOS_AMBU_FINAL.RATING_RESULT_FINAL"
+    assert t["pubmed_cf_flag"] == "CUST_TC.ADIPOS_AMBU_FINAL.PUBMED_CONTENT_FRAME_SINGLE_TBL"
+    assert t["websites_vertical_all_source"] == "CUST_TC.ADIPOS_AMBU_FINAL.WEBSITES_VERTICAL_ALL_SOURCE"
+    assert t["content_frame_spec"] == "CUST_TC.ADIPOS_AMBU_TMP.CONTENT_FRAME_SPEC"
+    assert t["customer_source"] == "CUST_TC.ADIPOS_AMBU_TMP.CUSTOMER_SOURCE"
+    assert t["pubmed_mapping"] == "CUST_TC.ADIPOS_AMBU_TMP.PUBMED_ARTICLE_MAPPING"
+    # CORE.PUBMED.* are constants, independent of the knobs
+    assert t["pubmed_article"] == "CORE.PUBMED.ARTICLE"
+    assert t["pubmed_author"] == "CORE.PUBMED.AUTHOR"

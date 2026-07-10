@@ -129,3 +129,21 @@ def connect_snowflake(aws_profile: str, warehouse: str, database: str):
         database=database,
         private_key=private_key_bytes,
     )
+
+
+def resolve_tables(sf):
+    """Build fully-qualified table names from the [snowflake] config section.
+    Only database + schema_final + schema_tmp change per targeting; the
+    CORE.PUBMED.* tables are constants."""
+    db, final, tmp = sf["database"], sf["schema_final"], sf["schema_tmp"]
+    return {
+        "llm_validation":               f"{db}.{final}.LLM_VALIDATION",
+        "rating_result_final":          f"{db}.{final}.RATING_RESULT_FINAL",
+        "pubmed_cf_flag":               f"{db}.{final}.PUBMED_CONTENT_FRAME_SINGLE_TBL",
+        "websites_vertical_all_source": f"{db}.{final}.WEBSITES_VERTICAL_ALL_SOURCE",
+        "content_frame_spec":           f"{db}.{tmp}.CONTENT_FRAME_SPEC",
+        "customer_source":              f"{db}.{tmp}.CUSTOMER_SOURCE",
+        "pubmed_mapping":               f"{db}.{tmp}.PUBMED_ARTICLE_MAPPING",
+        "pubmed_article":               "CORE.PUBMED.ARTICLE",
+        "pubmed_author":                "CORE.PUBMED.AUTHOR",
+    }

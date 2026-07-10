@@ -42,13 +42,13 @@ def build_pubmed_candidates_query(pubmed_mapping: str, pubmed_cf_flag: str,
     cf_sum = " + ".join(f"COALESCE(cf.{c}, 0)" for c in cf_cols) or "0"
     cf_any = " OR ".join(f"cf.{c} > 0" for c in cf_cols) or "FALSE"
     return f"""
-SELECT m.S_CUSTOMER_ID, m.PMID, cf.YEAR AS YEAR_VAL,
+SELECT m.S_CUSTOMER_ID, m.PMID, cf.YEAR_VAL AS YEAR_VAL,
        ({cf_sum}) AS CF_TREFFER
 FROM {pubmed_mapping} m
 JOIN {pubmed_cf_flag} cf ON cf.PMID = m.PMID
 WHERE m.MERGE_RESULT > 1
   AND ({cf_any})
-  AND cf.YEAR >= {cutoff}
+  AND cf.YEAR_VAL >= {cutoff}
 """.strip()
 
 
@@ -149,12 +149,13 @@ def shortlist(hcps: list, top_n: int) -> list:
 
 def main():
     import argparse, snowflake.connector
-    from pipeline_common import connect_snowflake
+    from pipeline_common import connect_snowflake, resolve_tables
     p = argparse.ArgumentParser(); p.add_argument("--force", action="store_true")
     args = p.parse_args()
 
     cfg = configparser.ConfigParser(); cfg.read(os.path.join(_DIR, "config.ini"))
-    sf, tb, fn, tm = cfg["snowflake"], cfg["tables"], cfg["funnel"], cfg["terms"]
+    sf, fn, tm = cfg["snowflake"], cfg["funnel"], cfg["terms"]
+    tb = resolve_tables(sf)
 
     out_path = os.path.join(_DIR, "data", "shortlist.json")
     if os.path.exists(out_path) and not args.force:

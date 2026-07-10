@@ -152,11 +152,12 @@ def build_comention_edges(hcps: list) -> list:
 
 def main():
     import argparse, snowflake.connector
-    from pipeline_common import connect_snowflake
+    from pipeline_common import connect_snowflake, resolve_tables
     p = argparse.ArgumentParser(); p.add_argument("--force", action="store_true")
     args = p.parse_args()
     cfg = configparser.ConfigParser(); cfg.read(os.path.join(_DIR, "config.ini"))
-    sf, tb, sc = cfg["snowflake"], cfg["tables"], cfg["scoring"]
+    sf, sc = cfg["snowflake"], cfg["scoring"]
+    tb = resolve_tables(sf)
 
     out_path = os.path.join(_DIR, "data", "kol_final.json")
     if os.path.exists(out_path) and not args.force:
