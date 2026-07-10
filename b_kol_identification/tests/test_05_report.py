@@ -100,6 +100,24 @@ def test_no_composite_or_digi_fields_leak_into_full_report():
     assert "digi_score" not in html.lower()
 
 
+def test_year_axis_is_fixed_span_ending_at_anchor():
+    data = {"anchor_year": 2023, "pub_history_years": 20, "hcps": []}
+    axis = mod.build_year_axis(data)
+    assert axis[0] == "2004" and axis[-1] == "2023"
+    assert len(axis) == 20
+    assert all(isinstance(y, str) for y in axis)
+
+def test_year_axis_falls_back_to_present_years_without_anchor():
+    data = {"hcps": [{"pub_by_year": {"2019": 1, "2021": 2}},
+                     {"pub_by_year": {"2020": 1}}]}
+    assert mod.build_year_axis(data) == ["2019", "2020", "2021"]
+
+def test_report_uses_20y_axis_in_profile_label():
+    data = {**DATA, "anchor_year": 2023, "pub_history_years": 20}
+    html = mod.build_report_html(data)
+    assert "2004" in html and "2023" in html   # full span rendered in a spark label
+
+
 def test_write_excel_creates_one_row_per_kol(tmp_path):
     out = tmp_path / "k.xlsx"
     mod.write_excel(DATA, str(out))

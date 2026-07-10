@@ -201,6 +201,7 @@ def main():
     with open(out_path, "w", encoding="utf-8") as f:
         json.dump({"indication": data["indication"], "client_drug": data["client_drug"],
                    "generated_at": datetime.now().isoformat(timespec="seconds"),
+                   "anchor_year": data.get("anchor_year"), "pub_history_years": data.get("pub_history_years"),
                    "pca_terms": pca_terms, "hcps": hcps,
                    "coauthor_edges": coauthor_edges, "comention_edges": comention_edges},
                   f, ensure_ascii=False, indent=2)

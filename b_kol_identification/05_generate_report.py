@@ -94,7 +94,7 @@ def render_rising_stars(hcps, all_years):
         # the unverified/candidate pub_by_year -- or the numbers won't justify the badge.
         recent, prior = _recent_prior(h.get("verified_pubmed_years", {}))
         ratio = f"{recent / max(prior, 1):.1f}×" if prior > 0 else "New voice"
-        spark = render_sparkline(h.get("pub_by_year", {}), all_years, width=110, height=30)
+        spark = render_sparkline(h.get("pub_by_year", {}), all_years, width=190, height=34)
         themes = "".join(f'<span class="tag">{_esc(t["term_en"])}</span>' for t in h.get("theme_labels", []))
         cards += (
             f'<div class="rising-card"><b>{_esc(h.get("name",""))}</b> '
@@ -197,7 +197,7 @@ def render_profiles(hcps, all_years, top_n=10):
         tier = h.get("tier", "C")
         badge = f'<span class="pill {tier.lower()}">{tier}</span>'
         rising = ' <span class="pill rise">Rising</span>' if h.get("rising_star") else ""
-        spark = render_sparkline(h.get("pub_by_year", {}), all_years, width=110, height=30)
+        spark = render_sparkline(h.get("pub_by_year", {}), all_years, width=190, height=34)
         themes = "".join(f'<span class="tag">{_esc(t["term_en"])}</span>' for t in h.get("theme_labels", []))
         meta = (f'<div class="muted">{h.get("kol_score",0)} verified sources '
                 f'({h.get("verified_web_count",0)} web / {h.get("verified_pubmed_count",0)} pubmed) '
@@ -222,8 +222,20 @@ def render_profiles(hcps, all_years, top_n=10):
     return f'<h2>Individual KOL Profiles — Top {top_n}</h2><div class="profile-grid">{cards}</div>'
 
 
+def build_year_axis(data):
+    """Fixed pub_history_years-length axis of string years ending at anchor_year.
+    Falls back to the union of years present in pub_by_year for pre-anchor JSON."""
+    anchor = data.get("anchor_year")
+    span = int(data.get("pub_history_years") or 20)
+    if anchor:
+        anchor = int(anchor)
+        return [str(y) for y in range(anchor - span + 1, anchor + 1)]
+    present = sorted({y for h in data.get("hcps", []) for y in h.get("pub_by_year", {})})
+    return [str(y) for y in present]
+
+
 def build_report_html(data):
-    all_years = sorted({y for h in data["hcps"] for y in h.get("pub_by_year", {})})
+    all_years = build_year_axis(data)
     top_n = 25
     css = f"""
       body{{margin:0;background:{PALETTE['bg']};color:{PALETTE['ink']};

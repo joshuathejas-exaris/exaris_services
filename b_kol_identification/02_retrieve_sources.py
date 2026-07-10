@@ -109,6 +109,7 @@ def main():
     with open(out_path, "w", encoding="utf-8") as f:
         json.dump({"indication": sl["indication"], "client_drug": sl["client_drug"],
                    "generated_at": datetime.now().isoformat(timespec="seconds"),
+                   "anchor_year": sl.get("anchor_year"), "pub_history_years": sl.get("pub_history_years"),
                    "pca_terms": sl["pca_terms"], "hcps": out_hcps}, f, ensure_ascii=False, indent=2)
     log.info(f"Wrote {out_path}")
 
