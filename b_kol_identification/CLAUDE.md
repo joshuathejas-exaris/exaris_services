@@ -117,9 +117,9 @@ Tests (mock Snowflake/Bedrock):
 
 | Table (config key) | Database.Schema | Purpose | Key columns |
 |---|---|---|---|
-| `llm_validation` | `CUST_TC.ADIPOS_AMBU_FINAL` | Web gate + full `CONTENT` + keywords | `NEAR_BY, IS_OLD, IS_DOCTOR, IN_RELATION, COL_KEYWORDS_ORIG, COL_KEYWORDS_EN, WEBSITE_ID, S_CUSTOMER_ID, CONTENT, URL` |
+| `llm_validation` | `CUST_TC.ADIPOS_AMBU_FINAL` | Web gate + full `CONTENT` + keywords | `NEAR_BY, IS_OLD, IS_DOCTOR, IN_RELATION, COL_KEYWORDS_ORIG, COL_KEYWORDS_EN, WEBSITE_ID, S_CUSTOMER_ID, CONTENT` |
 | `rating_result_final` | `CUST_TC.ADIPOS_AMBU_FINAL` | HCP A/B/C/D rating | `S_CUSTOMER_ID, RATING` |
-| `pubmed_cf_flag` | `CUST_TC.ADIPOS_AMBU_FINAL` (`PUBMED_CONTENT_FRAME_SINGLE_TBL`) | PubMed CF-term flags | `PMID, YEAR`, one column per CF term |
+| `pubmed_cf_flag` | `CUST_TC.ADIPOS_AMBU_FINAL` (`PUBMED_CONTENT_FRAME_SINGLE_TBL`) | PubMed CF-term flags | `PMID, YEAR_VAL`, one column per CF term |
 | `websites_vertical_all_source` | `CUST_TC.ADIPOS_AMBU_FINAL` | Web-source URLs (Stage 02 join) | `WEBSITE_ID, URL` |
 | `content_frame_spec` | `CUST_TC.ADIPOS_AMBU_TMP` | PCA / CF terms (Stage 01 Q1) | `COL_MAP, EN_TERM_1, PCA` |
 | `customer_source` | `CUST_TC.ADIPOS_AMBU_TMP` | HCP master record | `S_CUSTOMER_ID, S_FIRSTNAME, S_LASTNAME, S_CITY, S_HCP_GROUP` |
