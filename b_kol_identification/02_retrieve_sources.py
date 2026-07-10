@@ -16,11 +16,14 @@ def _in_list(ids: list) -> str:
     return ", ".join("'" + str(i).replace("'", "''") + "'" for i in ids)
 
 
-def build_web_content_query(llm_validation: str, website_ids: list, s_customer_id) -> str:
+def build_web_content_query(llm_validation: str, websites_vertical_all_source: str,
+                            website_ids: list, s_customer_id) -> str:
     escaped_id = str(s_customer_id).replace("'", "''")
-    return (f"SELECT WEBSITE_ID, CONTENT FROM {llm_validation} "
-            f"WHERE WEBSITE_ID IN ({_in_list(website_ids)}) "
-            f"AND S_CUSTOMER_ID = '{escaped_id}'")
+    return (f"SELECT lv.WEBSITE_ID, lv.CONTENT, src.URL "
+            f"FROM {llm_validation} lv "
+            f"LEFT JOIN {websites_vertical_all_source} src ON src.WEBSITE_ID = lv.WEBSITE_ID "
+            f"WHERE lv.WEBSITE_ID IN ({_in_list(website_ids)}) "
+            f"AND lv.S_CUSTOMER_ID = '{escaped_id}'")
 
 
 def build_pubmed_article_query(pubmed_article: str, pmids: list) -> str:
@@ -88,7 +91,8 @@ def main():
     for h in shortlisted:
         web_sources, pubmed_sources = [], []
         if h.get("web_website_ids"):
-            cur.execute(build_web_content_query(tb["llm_validation"], h["web_website_ids"], h["s_customer_id"]))
+            cur.execute(build_web_content_query(tb["llm_validation"], tb["websites_vertical_all_source"],
+                                                h["web_website_ids"], h["s_customer_id"]))
             web_sources = assemble_web_sources(cur.fetchall(), max_chars)
         pmids = [a["pmid"] for a in h.get("pubmed_articles", [])]
         if pmids:
