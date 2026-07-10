@@ -174,7 +174,8 @@
         <ul style="margin-top:4px">
           <li>Load the indication's terms — <code>CONTENT_FRAME_SPEC</code> where <code>PCA='X'</code> (configurable to all terms).</li>
           <li><b>Web candidates</b> per doctor: gate <code>LLM_VALIDATION</code> on <code>NEAR_BY=1</code>, <code>IS_OLD=0</code>, <code>IS_DOCTOR=1</code> + <code>IN_RELATION&gt;29</code> + a term match → candidate <code>WEBSITE_ID</code>s + a count. (<code>IS_OLD=0</code> is the only freshness filter — no date window on web.)</li>
-          <li><b>PubMed candidates</b> per doctor: verified authorship (<code>merge_result&gt;1</code>) ∩ a topical CF-flag, within 5 years → candidate <code>PMID</code>s + years + a CF-treffer-weighted count.</li>
+          <li><b>PubMed candidates</b> per doctor: verified authorship (<code>merge_result&gt;1</code>) ∩ a topical CF-flag, within a <b>5-year window</b> → candidate <code>PMID</code>s + a CF-treffer-weighted count. The window is anchored on <b><code>MAX(YEAR_VAL)</code> in <code>PUBMED_CONTENT_FRAME_SINGLE_TBL</code></b> (the latest year the targeting actually covers — e.g. 2023), <em>not</em> the current calendar year, so a 2023 targeting scores 2018–2023.</li>
+          <li><b>Publication-history bars (display only):</b> a separate query counts each doctor's CF-flagged PubMed articles per year over <b>20 years</b> back from the same anchor. These counts drive the bar charts only — they are <em>never</em> sent to the LLM and never affect the score. <b>Bar height = CF-flag count</b> (keyword-level activity, unverified); only the most-recent-5-years articles go through LLM-wiki verification and contribute to the score, tier, and rising-star flags.</li>
           <li><b>Shortlist:</b> <code>candidate_score = web_count + pubmed_count</code> (an upper bound on the final verified score) → keep the top <b>~75</b>. Metadata (name, city, specialty, A/B/C/D rating) is attached; <b>specialty is displayed, never used to filter</b>.</li>
         </ul>
       </div>
@@ -314,7 +315,7 @@
   <li><b>LLMs:</b> AWS Bedrock (<code>eu-central-1</code>) — <code>Amazon Nova Pro</code> for ingest, <code>Qwen3-235B</code> for the adversarial verify. Temperature 0. Reused from Service 1.2's <code>pipeline_common.call_bedrock_json</code>.</li>
   <li><b>No embeddings / no reranker:</b> the funnel + SQL gate replace vector search entirely.</li>
   <li><b>Snowflake auth:</b> AWS Secrets Manager private-key auth via the shared <code>ParameterManager</code> / <code>SecretReader</code> helpers.</li>
-  <li><b>Cost control:</b> only ~75 doctors' sources within a 5-year window reach the LLM; grounding drops fabricated quotes before any verify call is spent.</li>
+  <li><b>Cost control:</b> only ~75 doctors' sources within the anchored 5-year window reach the LLM; the 20-year history is cheap SQL counts for the charts and never hits the LLM. Grounding drops fabricated quotes before any verify call is spent.</li>
 </ul>
 
 <footer>
