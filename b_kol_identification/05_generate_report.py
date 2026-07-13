@@ -60,7 +60,7 @@ def render_score_breakdown(hcp: dict, weights: dict) -> str:
         f'<tr><td>{name}</td><td>{w:.2f}</td><td>{norm:.2f}</td><td>{contrib:.3f}</td><td>{_html.escape(ev)}</td></tr>'
         for (name, w, norm, contrib, ev) in rows)
     quotes = "".join(
-        f'<li>“{_html.escape(q["quote"])}” '
+        f'<li>“{_html.escape(q.get("quote", ""))}” '
         f'<a href="{_html.escape(q.get("url",""))}">source</a></li>'
         for q in hcp.get("top_quotes", []))
     return (f'<details class="score-breakdown"><summary>Composite {hcp.get("kol_score",0):.2f} — how it was scored</summary>'
@@ -426,12 +426,13 @@ def build_report_html(data, weights=None, as_of_year_cfg="latest"):
         .layout{{flex-direction:column;gap:8px}} .sidebar{{position:static;flex-basis:auto;width:100%}}}}
     """
     top = data["hcps"]
-    # City is the only per-HCP institution-like field carried into kol_final.json
-    # (Stage 04 keeps distinct_affiliations as a count, not the affiliation strings
-    # themselves) -- used here as the network node's display "affiliation".
+    # Stage 04 now threads through the HCP's actual co-author affiliation strings
+    # (top_affiliations) -- real institutions, which is what conveys cross-org
+    # activity on hover. Practice city is only a last-resort fallback for KOLs
+    # with no PubMed co-author affiliation data at all.
     network_nodes = [{"name": h.get("name", ""),
                        "reach": h.get("reach", {}).get("distinct_coauthors", 0),
-                       "affiliation": h.get("city", "")} for h in top]
+                       "affiliation": ", ".join(h.get("affiliations", [])) or h.get("city", "")} for h in top]
     banner = as_of_banner(data.get("anchor_year"), as_of_year_cfg)
 
     def _splice_explainer(section_html: str, explainer_text: str) -> str:

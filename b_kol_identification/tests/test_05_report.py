@@ -171,3 +171,18 @@ def test_score_breakdown_shows_three_factors():
 def test_as_of_banner_only_when_backtesting():
     assert mod.as_of_banner(2021, "2021") != ""
     assert mod.as_of_banner(2025, "latest") == ""
+
+
+def test_network_node_prefers_real_affiliation_over_city():
+    # Spec 9: the network graph should show real co-author affiliations on hover,
+    # not the HCP's practice city (same city != same institution).
+    data = {**DATA, "hcps": [{**DATA["hcps"][0], "affiliations": ["Uni Klinikum X"]}]}
+    html = mod.build_report_html(data)
+    assert "Uni Klinikum X" in html
+
+
+def test_network_node_falls_back_to_city_without_affiliations():
+    hcps = [{**DATA["hcps"][0], "affiliations": []}]
+    nodes = [{"name": h.get("name", ""), "reach": h.get("reach", {}).get("distinct_coauthors", 0),
+              "affiliation": ", ".join(h.get("affiliations", [])) or h.get("city", "")} for h in hcps]
+    assert nodes[0]["affiliation"] == "Berlin"

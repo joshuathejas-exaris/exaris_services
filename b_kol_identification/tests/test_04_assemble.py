@@ -105,3 +105,19 @@ def test_compute_ratio_normal():
 def test_compute_ratio_low_denominator_is_neutral():
     r = mod.compute_ratio(1, 0, 1, 0, min_denominator=5)
     assert r["neutral"] is True and r["ratio"] == 0.0
+
+def test_top_affiliations_ranked_by_frequency_self_excluded():
+    authors_by_pmid = {
+        "p1": [{"FIRSTNAME": "Self", "LASTNAME": "Hcp", "AFFILIATION": "Self Clinic"},
+               {"FIRSTNAME": "Anna", "LASTNAME": "Berg", "AFFILIATION": "Uni A"}],
+        "p2": [{"FIRSTNAME": "Carl", "LASTNAME": "Ott", "AFFILIATION": "Uni B"},
+               {"FIRSTNAME": "Anna", "LASTNAME": "Berg", "AFFILIATION": "Uni A"}]}
+    out = mod.top_affiliations(["p1", "p2"], authors_by_pmid, "Self", "Hcp")
+    assert out == ["Uni A", "Uni B"]
+
+def test_top_affiliations_dedupes_case_insensitively_keeps_first_seen_casing():
+    authors_by_pmid = {
+        "p1": [{"FIRSTNAME": "Anna", "LASTNAME": "Berg", "AFFILIATION": "Uni A Hospital"}],
+        "p2": [{"FIRSTNAME": "Carl", "LASTNAME": "Ott", "AFFILIATION": "UNI A HOSPITAL"}]}
+    out = mod.top_affiliations(["p1", "p2"], authors_by_pmid, "Self", "Hcp")
+    assert out == ["Uni A Hospital"]

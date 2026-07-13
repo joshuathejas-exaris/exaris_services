@@ -191,6 +191,27 @@ def compute_reach(verified_pmids: list, authors_by_pmid: dict, hcp_first: str, h
     return {"distinct_coauthors": len(coauthors), "distinct_affiliations": len(affiliations)}
 
 
+def top_affiliations(verified_pmids: list, authors_by_pmid: dict, hcp_first: str, hcp_last: str, n: int = 3) -> list:
+    """Up to n most-common co-author affiliation strings (raw casing) across the
+    HCP's verified-relevant PubMed articles, excluding the HCP themselves.
+    Deduped case-insensitively, ranked by frequency (ties: first-seen order)."""
+    from pipeline_common import name_matches
+    counts, first_seen = {}, {}
+    for pmid in verified_pmids:
+        for a in authors_by_pmid.get(str(pmid), []):
+            fn = str(_g(a, "FIRSTNAME") or ""); ln = str(_g(a, "LASTNAME") or "")
+            if name_matches(f"{fn} {ln}", hcp_first, hcp_last):
+                continue  # the HCP themselves
+            aff = str(_g(a, "AFFILIATION") or "").strip()
+            if not aff:
+                continue
+            key = aff.casefold()
+            counts[key] = counts.get(key, 0) + 1
+            first_seen.setdefault(key, aff)
+    ranked = sorted(counts.keys(), key=lambda k: -counts[k])
+    return [first_seen[k] for k in ranked[:n]]
+
+
 def compute_ratio(verified_web: int, verified_pubmed: int,
                   total_web: int, total_pubmed: int, min_denominator: int) -> dict:
     """verified-relevant / all-sources (topic-agnostic). Neutral below min_denominator."""
@@ -270,6 +291,7 @@ def main():
         h["reach"] = compute_reach(h.get("verified_pmids", []), authors_by_pmid, first, last)
         h["ratio"] = compute_ratio(h.get("verified_web_count", 0), h.get("verified_pubmed_count", 0),
                                    h.get("total_web_sources", 0), h.get("total_pubmed_sources", 0), min_denom)
+        h["affiliations"] = top_affiliations(h.get("verified_pmids", []), authors_by_pmid, first, last)
 
     # weighted composite (Task 6) — overwrites kol_score; must run after reach/ratio
     # are attached and before assign_tiers/drop_zero_score, since tiers key off kol_score
