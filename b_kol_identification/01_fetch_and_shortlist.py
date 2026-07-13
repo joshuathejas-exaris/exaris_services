@@ -56,6 +56,16 @@ def build_anchor_year_query(pubmed_cf_flag: str) -> str:
     return f"SELECT MAX(YEAR_VAL) AS ANCHOR FROM {pubmed_cf_flag}"
 
 
+def resolve_anchor_year(as_of_cfg: str, max_year_in_db) -> int:
+    """as_of_year config → concrete anchor year.
+    A 4-digit string pins the backtest year; 'latest' (or anything else) uses the
+    DB max YEAR_VAL, falling back to the current year."""
+    s = (as_of_cfg or "").strip()
+    if s.isdigit() and len(s) == 4:
+        return int(s)
+    return int(max_year_in_db) if max_year_in_db else datetime.now().year
+
+
 def build_pubmed_history_query(pubmed_mapping: str, pubmed_cf_flag: str,
                                cf_cols: list, history_years: int, anchor_year: int) -> str:
     cutoff = anchor_year - history_years
@@ -223,9 +233,9 @@ def main():
     log.info("Q1b: anchor year (max YEAR_VAL in PubMed CF table)...")
     cur.execute(build_anchor_year_query(tb["pubmed_cf_flag"]))
     _arow = cur.fetchone()
-    anchor_year = int((_arow.get("ANCHOR") or _arow.get("anchor")) or datetime.now().year) \
-        if _arow else datetime.now().year
-    log.info(f"anchor_year = {anchor_year}")
+    db_max = (_arow.get("ANCHOR") or _arow.get("anchor")) if _arow else None
+    anchor_year = resolve_anchor_year(fn.get("as_of_year", "latest"), db_max)
+    log.info(f"anchor_year = {anchor_year} (as_of_year={fn.get('as_of_year','latest')})")
 
     log.info("Q3: pubmed candidates (5y scoring window)...")
     cur.execute(build_pubmed_candidates_query(tb["pubmed_mapping"], tb["pubmed_cf_flag"],

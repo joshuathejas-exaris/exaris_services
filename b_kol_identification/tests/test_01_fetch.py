@@ -1,7 +1,14 @@
-import importlib.util, os
+import importlib.util, os, pytest
 _S = os.path.join(os.path.dirname(__file__), "..", "01_fetch_and_shortlist.py")
 _spec = importlib.util.spec_from_file_location("fetch", _S)
 mod = importlib.util.module_from_spec(_spec); _spec.loader.exec_module(mod)
+
+
+@pytest.fixture
+def fetch_mod():
+    p = os.path.join(os.path.dirname(__file__), "..", "01_fetch_and_shortlist.py")
+    spec = importlib.util.spec_from_file_location("fetch01", p)
+    m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m); return m
 
 def test_pca_terms_query_filters_on_pca_when_true():
     sql = mod.build_pca_terms_query("DB.V1.CONTENT_FRAME_SPEC", True)
@@ -109,3 +116,14 @@ def test_shortlist_flags_top_n_by_score():
     flagged = [h for h in out if h["shortlisted"]]
     assert len(flagged) == 2
     assert {h["s_customer_id"] for h in flagged} == {"4","3"}
+
+
+def test_resolve_anchor_year_explicit(fetch_mod):
+    assert fetch_mod.resolve_anchor_year("2021", 2025) == 2021
+
+def test_resolve_anchor_year_latest_uses_db_max(fetch_mod):
+    assert fetch_mod.resolve_anchor_year("latest", 2025) == 2025
+
+def test_resolve_anchor_year_latest_no_db(fetch_mod):
+    from datetime import datetime
+    assert fetch_mod.resolve_anchor_year("latest", None) == datetime.now().year
