@@ -87,6 +87,7 @@ JOIN {pubmed_cf_flag} cf ON cf.PMID = m.PMID
 WHERE m.MERGE_RESULT > 1
   AND ({cf_any})
   AND cf.YEAR_VAL >= {cutoff}
+  AND cf.YEAR_VAL <= {current_year}
 """.strip()
 
 
@@ -115,6 +116,7 @@ JOIN {pubmed_cf_flag} cf ON cf.PMID = m.PMID
 WHERE m.MERGE_RESULT > 1
   AND ({cf_any})
   AND cf.YEAR_VAL >= {cutoff}
+  AND cf.YEAR_VAL <= {anchor_year}
 GROUP BY m.S_CUSTOMER_ID, cf.YEAR_VAL
 """.strip()
 

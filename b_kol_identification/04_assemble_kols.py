@@ -103,7 +103,11 @@ def aggregate_themes(hcp: dict, pca_terms: list, top_n: int = 5) -> list:
 
 
 def drop_zero_score(hcps: list) -> list:
-    return [h for h in hcps if h.get("kol_score", 0) > 0]
+    """Drop HCPs with no verified sources at all. Deliberately uses RAW verified
+    counts, not the normalized composite kol_score: a pool-minimum HCP normalizes
+    to 0 (percentile/minmax/zscore all map the min to 0) even when it has real
+    verified sources, so scoring on kol_score here could empty a degenerate pool."""
+    return [h for h in hcps if h.get("verified_web_count", 0) + h.get("verified_pubmed_count", 0) > 0]
 
 
 def top_quotes(hcp: dict, n: int = 3) -> list:

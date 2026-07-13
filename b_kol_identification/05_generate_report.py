@@ -114,7 +114,7 @@ def render_stat_cards(data):
     hcps = data["hcps"]
     tiers = {t: sum(1 for h in hcps if h.get("tier") == t) for t in "ABC"}
     rising = sum(1 for h in hcps if h.get("rising_star"))
-    total_sources = sum(h.get("kol_score", 0) for h in hcps)
+    total_sources = sum(h.get("verified_web_count", 0) + h.get("verified_pubmed_count", 0) for h in hcps)
     cards = [("KOLs", len(hcps)), ("Tier A", tiers["A"]), ("Tier B", tiers["B"]),
              ("Tier C", tiers["C"]), ("Rising Stars", rising), ("Verified sources", total_sources)]
     cells = "".join(
@@ -132,12 +132,12 @@ def render_kol_table(hcps, top_n, weights=None):
         rows += (f'<tr><td>{i}</td><td>{badge}{rising}</td>'
                  f'<td><b>{_esc(h["name"])}</b><br><span class="muted">{_esc(h["specialty"])}</span></td>'
                  f'<td>{_esc(h["city"])}</td>'
-                 f'<td><b>{h["kol_score"]}</b> '
+                 f'<td><b>{h["kol_score"]:.2f}</b> '
                  f'<span class="muted">({h.get("verified_web_count",0)}w / {h.get("verified_pubmed_count",0)}p)</span>'
                  f'{render_score_breakdown(h, weights)}</td>'
                  f'<td>{h.get("latest_year","")}</td><td>{themes}</td></tr>')
     return (f'<table><thead><tr><th>#</th><th>Tier</th><th>Name / Specialty</th><th>City</th>'
-            f'<th>Verified sources</th><th>Latest</th><th>Themes</th></tr></thead><tbody>{rows}</tbody></table>')
+            f'<th>Composite score</th><th>Latest</th><th>Themes</th></tr></thead><tbody>{rows}</tbody></table>')
 
 
 def render_sparkline(pub_by_year, all_years, width=80, height=24):
@@ -272,7 +272,9 @@ def render_profiles(hcps, all_years, top_n=10, weights=None):
         rising = ' <span class="pill rise">Rising</span>' if h.get("rising_star") else ""
         spark = render_sparkline(h.get("pub_by_year", {}), all_years, width=190, height=34)
         themes = "".join(f'<span class="tag">{_esc(t["term_en"])}</span>' for t in h.get("theme_labels", []))
-        meta = (f'<div class="muted">{h.get("kol_score",0)} verified sources '
+        verified_total = h.get("verified_web_count", 0) + h.get("verified_pubmed_count", 0)
+        meta = (f'<div class="muted">Composite score {h.get("kol_score",0):.2f} &middot; '
+                f'{verified_total} verified sources '
                 f'({h.get("verified_web_count",0)} web / {h.get("verified_pubmed_count",0)} pubmed) '
                 f'&middot; latest {h.get("latest_year","")}</div>')
         quotes = ""
@@ -500,7 +502,7 @@ def write_excel(data: dict, path: str) -> None:
     import openpyxl
     wb = openpyxl.Workbook(); ws = wb.active; ws.title = "KOLs"
     headers = ["Rank", "Name", "Specialty", "City", "Tier", "Rising star",
-               "Verified sources", "Web", "PubMed", "Latest year", "Top themes",
+               "Composite score", "Verified sources", "Web", "PubMed", "Latest year", "Top themes",
                "Representative quote", "Source URL",
                "norm_relevance", "norm_reach", "norm_ratio",
                "contribution_relevance", "contribution_reach", "contribution_ratio",
@@ -510,8 +512,10 @@ def write_excel(data: dict, path: str) -> None:
         q = (h.get("top_quotes") or [{}])[0]
         fc = h.get("factor_contributions", {})
         reach = h.get("reach", {}); ratio = h.get("ratio", {})
+        verified_total = h.get("verified_web_count", 0) + h.get("verified_pubmed_count", 0)
         ws.append([i, h["name"], h["specialty"], h["city"], h.get("tier", ""),
-                   "yes" if h.get("rising_star") else "", h.get("kol_score", 0),
+                   "yes" if h.get("rising_star") else "",
+                   h.get("kol_score", 0), verified_total,
                    h.get("verified_web_count", 0), h.get("verified_pubmed_count", 0),
                    h.get("latest_year", ""),
                    ", ".join(t["term_en"] for t in h.get("theme_labels", [])[:5]),

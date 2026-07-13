@@ -34,10 +34,11 @@ def test_web_candidates_query_has_gate_and_in_relation():
 
 def test_pubmed_candidates_query_verified_author_and_window():
     sql = mod.build_pubmed_candidates_query(
-        "DB.T.PUBMED_ARTICLE_MAPPING", "DB.T.PUBMED_CF", ["CF_OBESITY","CF_GLP1"], 5, 2026)
+        "DB.T.PUBMED_ARTICLE_MAPPING", "DB.T.PUBMED_CF", ["CF_OBESITY","CF_GLP1"], 5, 2021)
     assert "MERGE_RESULT > 1" in sql
     assert "DB.T.PUBMED_CF" in sql
-    assert "2021" in sql            # current_year - window
+    assert "2016" in sql            # current_year - window (lower bound)
+    assert "YEAR_VAL <= 2021" in sql   # anchor upper bound (backtest cap)
     assert "CF_OBESITY" in sql and "CF_GLP1" in sql
 
 def test_hcp_meta_query_joins_and_filters_rating():
@@ -93,10 +94,11 @@ def test_anchor_year_query_reads_max_year_from_cf_table():
 
 def test_pubmed_history_query_windows_20y_back_from_anchor_and_counts_per_year():
     sql = mod.build_pubmed_history_query(
-        "DB.T.PUBMED_ARTICLE_MAPPING", "DB.T.PUBMED_CF", ["CF_OBESITY", "CF_GLP1"], 20, 2023)
+        "DB.T.PUBMED_ARTICLE_MAPPING", "DB.T.PUBMED_CF", ["CF_OBESITY", "CF_GLP1"], 20, 2021)
     assert "MERGE_RESULT > 1" in sql
     assert "CF_OBESITY" in sql and "CF_GLP1" in sql
-    assert "2003" in sql                       # anchor(2023) - history(20)
+    assert "2001" in sql                       # anchor(2021) - history(20), lower bound
+    assert "YEAR_VAL <= 2021" in sql           # anchor upper bound (backtest cap)
     assert "GROUP BY" in sql.upper()
     assert "COUNT(" in sql.upper()
 

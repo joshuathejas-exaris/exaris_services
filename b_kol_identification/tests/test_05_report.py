@@ -6,7 +6,7 @@ mod = importlib.util.module_from_spec(_spec); _spec.loader.exec_module(mod)
 DATA = {"indication":"Obesity","client_drug":"Ozempic","generated_at":"2026-07-09T10:00:00",
   "pca_terms":[{"term_key":"CF_OBESITY","term_en":"Obesity"}],
   "hcps":[{"s_customer_id":"10","name":"Anna Berg","city":"Berlin","specialty":"Innere Medizin",
-           "rating":"A","verified_web_count":3,"verified_pubmed_count":4,"kol_score":7,"latest_year":2024,
+           "rating":"A","verified_web_count":3,"verified_pubmed_count":4,"kol_score":0.7231800766,"latest_year":2024,
            "tier":"A","rising_star":False,"pub_by_year":{"2023":2,"2024":2},
            "theme_labels":[{"term_key":"CF_OBESITY","term_en":"Obesity","count":5}],
            "top_quotes":[{"quote":"patient improved","url":"http://x","sentiment":"positive"}]}],
@@ -19,10 +19,23 @@ def test_stat_cards_show_kol_count_and_no_digiscore():
     assert "1" in html
     assert "digi" not in html.lower()
 
-def test_kol_table_shows_verified_source_counts():
+def test_stat_cards_verified_sources_kpi_uses_raw_counts_not_composite():
+    # kol_score is now a 0-1 composite; the "Verified sources" KPI must sum the raw
+    # verified_web_count + verified_pubmed_count across HCPs, not kol_score (which
+    # would previously sum to a near-meaningless fraction).
+    html = mod.render_stat_cards(DATA)
+    total = sum(h.get("verified_web_count", 0) + h.get("verified_pubmed_count", 0) for h in DATA["hcps"])
+    assert f'<div class="v">{total}</div>' in html
+
+def test_kol_table_shows_composite_score_formatted_and_header():
     html = mod.render_kol_table(DATA["hcps"], top_n=25)
-    assert "Anna Berg" in html and "7" in html   # kol_score
+    h = DATA["hcps"][0]
+    assert "Anna Berg" in html
     assert "Obesity" in html                       # theme
+    assert "<th>Composite score</th>" in html
+    assert "<th>Verified sources</th>" not in html
+    assert f'{h["kol_score"]:.2f}' in html         # formatted composite (0.72), not raw float
+    assert f'({h["verified_web_count"]}w / {h["verified_pubmed_count"]}p)' in html
 
 def test_network_lists_external_collaborator():
     html = mod.render_network(DATA["coauthor_edges"], DATA["comention_edges"], DATA["hcps"])
@@ -89,8 +102,13 @@ def test_profiles_render_quotes_and_verified_source_breakdown():
     h = DATA["hcps"][0]
     # The actual verified quote text must render.
     assert h["top_quotes"][0]["quote"] in html
-    # The actual verified source counts must render (kol_score + web/pubmed split).
-    assert f'{h["kol_score"]} verified sources' in html
+    # The composite score must render formatted and clearly labeled as a composite --
+    # not mislabeled as a source count.
+    assert f'Composite score {h["kol_score"]:.2f}' in html
+    # The ACTUAL verified source total (web+pubmed count) must render separately from
+    # the composite.
+    verified_total = h["verified_web_count"] + h["verified_pubmed_count"]
+    assert f'{verified_total} verified sources' in html
     assert f'{h["verified_web_count"]} web' in html
     assert f'{h["verified_pubmed_count"]} pubmed' in html
 
@@ -145,7 +163,15 @@ def test_write_excel_creates_one_row_per_kol(tmp_path):
     wb = openpyxl.load_workbook(out); ws = wb.active
     headers = [c.value for c in ws[1]]
     assert "Name" in headers and "Verified sources" in headers and "Tier" in headers
+    assert "Composite score" in headers
     assert ws.max_row == 1 + len(DATA["hcps"])
+    # "Composite score" holds the 0-1 float; "Verified sources" holds the raw count.
+    h = DATA["hcps"][0]
+    comp_idx = headers.index("Composite score")
+    vs_idx = headers.index("Verified sources")
+    row2 = [c.value for c in ws[2]]
+    assert row2[comp_idx] == h["kol_score"]
+    assert row2[vs_idx] == h["verified_web_count"] + h["verified_pubmed_count"]
 
 
 # ── Task 7: network graph, score drill-down, per-section explainers ────────────

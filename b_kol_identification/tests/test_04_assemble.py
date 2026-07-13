@@ -46,12 +46,17 @@ def test_aggregate_themes_counts_from_claims():
     out = mod.aggregate_themes(hcp, terms, top_n=5)
     assert out[0]["term_key"] == "CF_OBESITY" and out[0]["count"] == 2
 
-def test_drop_zero_score_removes_unverified():
-    hcps = [{"s_customer_id":"1","kol_score":0},
-            {"s_customer_id":"2","kol_score":3},
-            {"s_customer_id":"3"}]  # missing kol_score treated as 0
+def test_drop_zero_score_keeps_pool_minimum_composite_with_real_verified_sources():
+    # kol_score is now the normalized composite -- the pool minimum normalizes to 0
+    # even when the HCP has real verified sources (a degenerate pool could otherwise
+    # empty the whole report). The drop criterion must be raw verified counts, not
+    # the normalized composite.
+    hcps = [{"s_customer_id":"1","verified_web_count":0,"verified_pubmed_count":0,"kol_score":0},
+            {"s_customer_id":"2","verified_web_count":1,"verified_pubmed_count":0,"kol_score":0},
+            {"s_customer_id":"3","verified_web_count":2,"verified_pubmed_count":1,"kol_score":0.5},
+            {"s_customer_id":"4"}]  # missing counts treated as 0 -> dropped
     out = mod.drop_zero_score(hcps)
-    assert [h["s_customer_id"] for h in out] == ["2"]
+    assert [h["s_customer_id"] for h in out] == ["2", "3"]
 
 def test_coauthor_query_has_pmid_in_list():
     sql = mod.build_coauthor_query("CORE.PUBMED.AUTHOR", ["39000001"])
