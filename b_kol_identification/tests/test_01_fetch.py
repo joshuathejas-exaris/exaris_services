@@ -153,3 +153,20 @@ def test_resolve_anchor_year_latest_uses_db_max(fetch_mod):
 def test_resolve_anchor_year_latest_no_db(fetch_mod):
     from datetime import datetime
     assert fetch_mod.resolve_anchor_year("latest", None) == datetime.now().year
+
+
+def test_build_total_pubmed_query_caps_year(fetch_mod):
+    sql = fetch_mod.build_total_pubmed_query(
+        "DB.T.PUBMED_ARTICLE_MAPPING", "CORE.PUBMED.ARTICLE", 2021)
+    assert "MERGE_RESULT > 1" in sql and "YEAR_VAL <= 2021" in sql
+
+def test_build_total_web_query_doctor_only(fetch_mod):
+    sql = fetch_mod.build_total_web_query("DB.F.LLM_VALIDATION")
+    assert "IS_DOCTOR = 1" in sql and "COUNT(DISTINCT" in sql.upper()
+
+def test_build_totals_map_merges(fetch_mod):
+    web = [{"S_CUSTOMER_ID": "1", "N": 10}]
+    pub = [{"S_CUSTOMER_ID": "1", "N": 4}, {"S_CUSTOMER_ID": "2", "N": 2}]
+    out = fetch_mod.build_totals_map(web, pub)
+    assert out["1"] == {"total_web": 10, "total_pubmed": 4}
+    assert out["2"] == {"total_web": 0, "total_pubmed": 2}

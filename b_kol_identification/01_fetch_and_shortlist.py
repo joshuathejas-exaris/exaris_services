@@ -142,6 +142,36 @@ def apply_pub_history(hcps: list, history_map: dict) -> list:
     return hcps
 
 
+def build_total_web_query(llm_validation: str) -> str:
+    return (f"SELECT S_CUSTOMER_ID, COUNT(DISTINCT WEBSITE_ID) AS N "
+            f"FROM {llm_validation} WHERE IS_DOCTOR = 1 GROUP BY S_CUSTOMER_ID").strip()
+
+
+def build_total_pubmed_query(pubmed_mapping: str, pubmed_article: str, anchor_year: int) -> str:
+    return f"""
+SELECT m.S_CUSTOMER_ID, COUNT(DISTINCT m.PMID) AS N
+FROM {pubmed_mapping} m
+JOIN {pubmed_article} a ON a.PMID = m.PMID
+WHERE m.MERGE_RESULT > 1 AND a.YEAR_VAL <= {anchor_year}
+GROUP BY m.S_CUSTOMER_ID
+""".strip()
+
+
+def build_totals_map(web_total_rows: list, pubmed_total_rows: list) -> dict:
+    def _g(row, k):
+        v = row.get(k)
+        return v if v is not None else row.get(k.lower())
+    out = {}
+    for r in web_total_rows:
+        out.setdefault(str(_g(r, "S_CUSTOMER_ID") or ""), {})["total_web"] = int(_g(r, "N") or 0)
+    for r in pubmed_total_rows:
+        out.setdefault(str(_g(r, "S_CUSTOMER_ID") or ""), {})["total_pubmed"] = int(_g(r, "N") or 0)
+    for cid in out:
+        out[cid].setdefault("total_web", 0)
+        out[cid].setdefault("total_pubmed", 0)
+    return out
+
+
 def build_hcp_meta_query(customer_source: str, rating_result_final: str) -> str:
     return f"""
 SELECT cs.S_CUSTOMER_ID, cs.S_FIRSTNAME, cs.S_LASTNAME,
@@ -302,10 +332,21 @@ def main():
     cur.execute(build_hcp_meta_query(tb["customer_source"], tb["rating_result_final"]))
     meta_map = {str(r["S_CUSTOMER_ID"]): normalise_meta_row(r) for r in cur.fetchall()}
 
+    log.info("Q5: total sources (ratio denominators)...")
+    cur.execute(build_total_web_query(tb["llm_validation"]))
+    web_totals = cur.fetchall()
+    cur.execute(build_total_pubmed_query(tb["pubmed_mapping"], tb["pubmed_article"], anchor_year))
+    pubmed_totals = cur.fetchall()
+    totals_map = build_totals_map(web_totals, pubmed_totals)
+
     cur.close(); conn.close()
 
     hcps = list(aggregate_candidates(web_id_map, pubmed_rows, meta_map).values())
     hcps = apply_pub_history(hcps, build_pub_history_map(history_rows))
+    for h in hcps:
+        t = totals_map.get(str(h.get("s_customer_id", "")), {})
+        h["total_web_sources"] = t.get("total_web", 0)
+        h["total_pubmed_sources"] = t.get("total_pubmed", 0)
     hcps = shortlist(hcps, int(fn["top_n_candidates"]))
     n_short = sum(h["shortlisted"] for h in hcps)
     log.info(f"{len(hcps)} candidate HCPs; {n_short} shortlisted")
