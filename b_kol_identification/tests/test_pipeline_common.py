@@ -50,3 +50,8 @@ def test_resolve_tables_builds_fqns_from_schema_knobs():
     # CORE.PUBMED.* are constants, independent of the knobs
     assert t["pubmed_article"] == "CORE.PUBMED.ARTICLE"
     assert t["pubmed_author"] == "CORE.PUBMED.AUTHOR"
+
+def test_resolve_tables_has_embeddings():
+    from pipeline_common import resolve_tables
+    t = resolve_tables({"database": "DB", "schema_final": "F", "schema_tmp": "T"})
+    assert t["websites_vertical_embeddings"].endswith("WEBSITES_VERTICAL_EMBEDDINGS_512")

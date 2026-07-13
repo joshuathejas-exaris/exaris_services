@@ -141,6 +141,8 @@ def resolve_tables(sf):
         "rating_result_final":          f"{db}.{final}.RATING_RESULT_FINAL",
         "pubmed_cf_flag":               f"{db}.{final}.PUBMED_CONTENT_FRAME_SINGLE_TBL",
         "websites_vertical_all_source": f"{db}.{final}.WEBSITES_VERTICAL_ALL_SOURCE",
+        "websites_vertical_embeddings": f"{db}.{final}.WEBSITES_VERTICAL_EMBEDDINGS_512",
+        "pubmed_embeddings":            f"{db}.{final}.PUBMED_EMBEDDINGS_512",
         "content_frame_spec":           f"{db}.{tmp}.CONTENT_FRAME_SPEC",
         "customer_source":              f"{db}.{tmp}.CUSTOMER_SOURCE",
         "pubmed_mapping":               f"{db}.{tmp}.PUBMED_ARTICLE_MAPPING",

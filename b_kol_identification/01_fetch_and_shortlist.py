@@ -10,6 +10,11 @@ logging.basicConfig(format="%(asctime)s [%(levelname)s] %(message)s", level=logg
 log = logging.getLogger(__name__)
 _DIR = os.path.dirname(__file__)
 sys.path.insert(0, os.path.join(_DIR, ".."))
+sys.path.insert(0, _DIR)
+
+from vector_creator import VectorCreator
+
+EMBEDDING_DIM = 768
 
 
 def build_pca_terms_query(content_frame_spec: str, use_pca_only: bool) -> str:
@@ -34,6 +39,39 @@ WHERE lv.NEAR_BY = 1 AND lv.IS_OLD = 0 AND lv.IS_DOCTOR = 1
   AND lv.IN_RELATION > {in_relation_min}
   AND ({term_predicate})
 """.strip()
+
+
+def build_vector_web_query(llm_validation: str, embeddings_vertical: str,
+                           vec_literal: str, min_similarity: float) -> str:
+    """Per (HCP, website) max chunk cosine-similarity to the indication vector,
+    over the HCP's doctor-associated vertical websites. Recall arm — the LLM
+    verify pass still arbitrates relevance downstream."""
+    return f"""
+SELECT lv.S_CUSTOMER_ID, e.WEBSITE_ID,
+       MAX(VECTOR_COSINE_SIMILARITY(e.EMBEDDINGS, {vec_literal})) AS SIM
+FROM {embeddings_vertical} e
+JOIN {llm_validation} lv ON lv.WEBSITE_ID = e.WEBSITE_ID
+WHERE lv.NEAR_BY = 1 AND lv.IS_DOCTOR = 1
+GROUP BY lv.S_CUSTOMER_ID, e.WEBSITE_ID
+HAVING MAX(VECTOR_COSINE_SIMILARITY(e.EMBEDDINGS, {vec_literal})) >= {min_similarity}
+""".strip()
+
+
+def merge_web_ids(keyword_rows: list, vector_rows: list) -> dict:
+    """s_customer_id -> deduped website_id list (keyword ∪ vector)."""
+    def _g(row, k):
+        v = row.get(k)
+        return v if v is not None else row.get(k.lower())
+    out = {}
+    for row in list(keyword_rows) + list(vector_rows):
+        cid = str(_g(row, "S_CUSTOMER_ID") or "")
+        wid = str(_g(row, "WEBSITE_ID") or "")
+        if not cid or not wid:
+            continue
+        lst = out.setdefault(cid, [])
+        if wid not in lst:
+            lst.append(wid)
+    return out
 
 
 def build_pubmed_candidates_query(pubmed_mapping: str, pubmed_cf_flag: str,
@@ -145,18 +183,14 @@ def normalise_meta_row(row: dict) -> dict:
     }
 
 
-def aggregate_candidates(web_rows: list, pubmed_rows: list, meta_map: dict, term_texts: list) -> dict:
+def aggregate_candidates(web_id_map: dict, pubmed_rows: list, meta_map: dict) -> dict:
     def _g(row, k):
         v = row.get(k)
         return v if v is not None else row.get(k.lower())
     acc = {}
-    for row in web_rows:
-        cid = str(_g(row, "S_CUSTOMER_ID") or "")
-        blob = f"{_g(row,'COL_KEYWORDS_ORIG') or ''} {_g(row,'COL_KEYWORDS_EN') or ''}"
-        if not matches_keywords(blob, term_texts):
-            continue
+    for cid, wids in web_id_map.items():
         h = acc.setdefault(cid, {"web_website_ids": [], "pubmed_articles": [], "pub_by_year": {}})
-        h["web_website_ids"].append(str(_g(row, "WEBSITE_ID") or ""))
+        h["web_website_ids"] = list(dict.fromkeys(wids))
     for row in pubmed_rows:
         cid = str(_g(row, "S_CUSTOMER_ID") or "")
         h = acc.setdefault(cid, {"web_website_ids": [], "pubmed_articles": [], "pub_by_year": {}})
@@ -229,6 +263,23 @@ def main():
     cur.execute(build_web_candidates_query(tb["llm_validation"],
                 term_ilike_predicate(term_texts), int(fn["in_relation_min"])))
     web_rows = cur.fetchall()
+    web_rows = [r for r in web_rows if matches_keywords(
+        f"{(r.get('COL_KEYWORDS_ORIG') or r.get('col_keywords_orig') or '')} "
+        f"{(r.get('COL_KEYWORDS_EN') or r.get('col_keywords_en') or '')}", term_texts)]
+
+    hy = cfg["hybrid"]
+    vector_rows = []
+    if hy.getboolean("hybrid_relevance"):
+        log.info("Q2b: vector recall arm (web, vertical embeddings)...")
+        query_text = f"{inp['indication']} " + ", ".join(term_texts)
+        vec = VectorCreator().get_vector_from_list([query_text])
+        vlit = f"{vec.tolist()}::VECTOR(FLOAT, {EMBEDDING_DIM})"
+        cur.execute(build_vector_web_query(
+            tb["llm_validation"], tb["websites_vertical_embeddings"], vlit,
+            hy.getfloat("vector_sim_threshold")))
+        vector_rows = cur.fetchall()
+        log.info(f"vector arm returned {len(vector_rows)} (hcp,website) rows")
+    web_id_map = merge_web_ids(web_rows, vector_rows)
 
     log.info("Q1b: anchor year (max YEAR_VAL in PubMed CF table)...")
     cur.execute(build_anchor_year_query(tb["pubmed_cf_flag"]))
@@ -253,7 +304,7 @@ def main():
 
     cur.close(); conn.close()
 
-    hcps = list(aggregate_candidates(web_rows, pubmed_rows, meta_map, term_texts).values())
+    hcps = list(aggregate_candidates(web_id_map, pubmed_rows, meta_map).values())
     hcps = apply_pub_history(hcps, build_pub_history_map(history_rows))
     hcps = shortlist(hcps, int(fn["top_n_candidates"]))
     n_short = sum(h["shortlisted"] for h in hcps)

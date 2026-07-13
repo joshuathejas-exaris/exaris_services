@@ -56,12 +56,11 @@ def test_normalise_meta_row_builds_name():
     assert r["name"] == "Anna Berg" and r["specialty"] == "Innere Medizin" and r["rating"] == "A"
 
 def test_aggregate_counts_web_and_pubmed_per_hcp():
-    web = [{"S_CUSTOMER_ID":"10","WEBSITE_ID":"w1","COL_KEYWORDS_ORIG":"obesity","COL_KEYWORDS_EN":"obesity"},
-           {"S_CUSTOMER_ID":"10","WEBSITE_ID":"w2","COL_KEYWORDS_ORIG":"glp-1","COL_KEYWORDS_EN":"glp-1"}]
+    web_id_map = {"10": ["w1", "w2"]}
     pub = [{"S_CUSTOMER_ID":"10","PMID":"p1","YEAR_VAL":2024,"CF_TREFFER":3}]
     meta = {"10": {"s_customer_id":"10","name":"A B","firstname":"A","lastname":"B",
                    "city":"X","specialty":"Y","rating":"A"}}
-    out = mod.aggregate_candidates(web, pub, meta, ["obesity","glp-1"])
+    out = mod.aggregate_candidates(web_id_map, pub, meta)
     h = out["10"]
     assert h["web_candidate_count"] == 2
     assert h["pubmed_candidate_count"] == 1
@@ -69,16 +68,23 @@ def test_aggregate_counts_web_and_pubmed_per_hcp():
     assert h["candidate_score"] == 3   # 2 web + 1 pubmed
     assert h["pub_by_year"] == {"2024": 1}
 
-def test_aggregate_drops_web_row_failing_token_match():
-    web = [{"S_CUSTOMER_ID":"10","WEBSITE_ID":"w1","COL_KEYWORDS_ORIG":"cardiology","COL_KEYWORDS_EN":"cardiology"}]
+def test_aggregate_drops_hcp_with_no_candidate_sources():
+    web_id_map = {"10": []}
     meta = {"10":{"s_customer_id":"10","name":"A B","firstname":"A","lastname":"B","city":"X","specialty":"Y","rating":"A"}}
-    out = mod.aggregate_candidates(web, [], meta, ["obesity"])
+    out = mod.aggregate_candidates(web_id_map, [], meta)
     assert "10" not in out   # no candidate sources at all
 
 def test_aggregate_excludes_hcp_without_meta():
-    web = [{"S_CUSTOMER_ID":"99","WEBSITE_ID":"w1","COL_KEYWORDS_ORIG":"obesity","COL_KEYWORDS_EN":"obesity"}]
-    out = mod.aggregate_candidates(web, [], {}, ["obesity"])
+    web_id_map = {"99": ["w1"]}
+    out = mod.aggregate_candidates(web_id_map, [], {})
     assert out == {}
+
+def test_aggregate_candidates_counts_union(fetch_mod):
+    web_id_map = {"1": ["a", "b"]}
+    meta = {"1": {"s_customer_id": "1", "name": "X", "city": "", "specialty": "", "rating": "A"}}
+    out = fetch_mod.aggregate_candidates(web_id_map, [], meta)
+    assert out["1"]["web_candidate_count"] == 2
+    assert out["1"]["candidate_score"] == 2
 
 def test_anchor_year_query_reads_max_year_from_cf_table():
     sql = mod.build_anchor_year_query("DB.F.PUBMED_CF")
@@ -116,6 +122,26 @@ def test_shortlist_flags_top_n_by_score():
     flagged = [h for h in out if h["shortlisted"]]
     assert len(flagged) == 2
     assert {h["s_customer_id"] for h in flagged} == {"4","3"}
+
+
+def test_build_vector_web_query_uses_vertical_only(fetch_mod):
+    sql = fetch_mod.build_vector_web_query(
+        "DB.F.LLM_VALIDATION", "DB.F.WEBSITES_VERTICAL_EMBEDDINGS_512",
+        "[0.1, 0.2]::VECTOR(FLOAT, 768)", 0.55)
+    assert "WEBSITES_VERTICAL_EMBEDDINGS_512" in sql
+    assert "WEBSITES_EMBEDDINGS_512" not in sql           # public table excluded
+    assert "VECTOR_COSINE_SIMILARITY" in sql
+    assert "0.55" in sql and "IS_DOCTOR = 1" in sql
+
+def test_merge_web_ids_unions_and_dedupes(fetch_mod):
+    kw = [{"S_CUSTOMER_ID": "1", "WEBSITE_ID": "a"},
+          {"S_CUSTOMER_ID": "1", "WEBSITE_ID": "b"}]
+    vec = [{"S_CUSTOMER_ID": "1", "WEBSITE_ID": "b"},   # dup, ignored
+           {"S_CUSTOMER_ID": "1", "WEBSITE_ID": "c"},   # new from vector arm
+           {"S_CUSTOMER_ID": "2", "WEBSITE_ID": "z"}]
+    out = fetch_mod.merge_web_ids(kw, vec)
+    assert sorted(out["1"]) == ["a", "b", "c"]
+    assert out["2"] == ["z"]
 
 
 def test_resolve_anchor_year_explicit(fetch_mod):
