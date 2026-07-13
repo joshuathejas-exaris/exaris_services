@@ -12,14 +12,50 @@ _DIR = os.path.dirname(__file__)
 sys.path.insert(0, os.path.join(_DIR, ".."))
 
 
-def score_hcps(hcps: list) -> list:
-    out = []
-    for h in hcps:
-        score = int(h.get("verified_web_count", 0)) + int(h.get("verified_pubmed_count", 0))
-        years = [int(y) for y in h.get("verified_pubmed_years", {}).keys() if str(y).isdigit()]
-        out.append({**h, "kol_score": score, "latest_year": max(years) if years else 0})
-    out.sort(key=lambda h: (h["kol_score"], h["latest_year"]), reverse=True)
-    return out
+def normalize_values(values: list, method: str) -> list:
+    """Map raw factor values to [0,1]. percentile (rank-based, ties share rank),
+    minmax, or zscore (min-max of z to keep it in [0,1]). Degenerate pool -> zeros."""
+    vals = [float(v) for v in values]
+    n = len(vals)
+    if n == 0:
+        return []
+    if method == "percentile":
+        srt = sorted(vals)
+        # fraction of values strictly less than v, so a unique max -> <1; ties share it
+        out = []
+        for v in vals:
+            less = sum(1 for x in srt if x < v)
+            equal = sum(1 for x in srt if x == v)
+            out.append((less + 0.5 * (equal - 1)) / (n - 1) if n > 1 else 0.0)
+        # rescale to [0,1]
+        lo, hi = min(out), max(out)
+        return [(o - lo) / (hi - lo) if hi > lo else 0.0 for o in out]
+    if method == "zscore":
+        mean = sum(vals) / n
+        var = sum((v - mean) ** 2 for v in vals) / n
+        std = var ** 0.5
+        z = [(v - mean) / std if std > 0 else 0.0 for v in vals]
+        lo, hi = min(z), max(z)
+        return [(x - lo) / (hi - lo) if hi > lo else 0.0 for x in z]
+    # minmax (default)
+    lo, hi = min(vals), max(vals)
+    return [(v - lo) / (hi - lo) if hi > lo else 0.0 for v in vals]
+
+
+def apply_composite(hcps: list, weights: dict, method: str) -> list:
+    """Normalize the three raw factors across the pool and combine them into a
+    weighted composite that OVERWRITES kol_score (replaces the old raw-sum score)."""
+    rel = normalize_values([h.get("verified_web_count", 0) + h.get("verified_pubmed_count", 0) for h in hcps], method)
+    rch = normalize_values([h.get("reach", {}).get("distinct_coauthors", 0) for h in hcps], method)
+    rat = normalize_values([h.get("ratio", {}).get("ratio", 0.0) for h in hcps], method)
+    for i, h in enumerate(hcps):
+        c_rel = weights["relevance"] * rel[i]
+        c_rch = weights["reach"] * rch[i]
+        c_rat = weights["ratio"] * rat[i]
+        h["norm_relevance"], h["norm_reach"], h["norm_ratio"] = rel[i], rch[i], rat[i]
+        h["factor_contributions"] = {"relevance": c_rel, "reach": c_rch, "ratio": c_rat}
+        h["kol_score"] = c_rel + c_rch + c_rat
+    return hcps
 
 
 def assign_tiers(hcps: list, tier_a_pct: float, tier_b_pct: float) -> list:
@@ -197,9 +233,7 @@ def main():
         data = json.load(f)
     pca_terms = data["pca_terms"]
 
-    hcps = score_hcps(data["hcps"])
-    hcps = drop_zero_score(hcps)
-    hcps = assign_tiers(hcps, float(sc["tier_a_percentile"]), float(sc["tier_b_percentile"]))
+    hcps = data["hcps"]
     hcps = flag_rising_stars(hcps, int(sc["rising_star_min_pubs"]), float(sc["rising_star_growth"]))
     for h in hcps:
         h["theme_labels"] = aggregate_themes(h, pca_terms)
@@ -236,6 +270,19 @@ def main():
         h["reach"] = compute_reach(h.get("verified_pmids", []), authors_by_pmid, first, last)
         h["ratio"] = compute_ratio(h.get("verified_web_count", 0), h.get("verified_pubmed_count", 0),
                                    h.get("total_web_sources", 0), h.get("total_pubmed_sources", 0), min_denom)
+
+    # weighted composite (Task 6) — overwrites kol_score; must run after reach/ratio
+    # are attached and before assign_tiers/drop_zero_score, since tiers key off kol_score
+    weights = {"relevance": float(sc["weight_relevance"]),
+               "reach": float(sc["weight_reach"]),
+               "ratio": float(sc["weight_ratio"])}
+    hcps = apply_composite(hcps, weights, sc.get("normalization", "percentile"))
+    for h in hcps:  # latest_year for sort/rising-star display
+        years = [int(y) for y in h.get("verified_pubmed_years", {}).keys() if str(y).isdigit()]
+        h["latest_year"] = max(years) if years else 0
+    hcps.sort(key=lambda h: (h["kol_score"], h["latest_year"]), reverse=True)
+    hcps = drop_zero_score(hcps)
+    hcps = assign_tiers(hcps, float(sc["tier_a_percentile"]), float(sc["tier_b_percentile"]))
 
     # strip bulky per-claim payload from the final file (keep top_quotes + counts)
     for h in hcps:

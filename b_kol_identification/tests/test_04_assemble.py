@@ -3,12 +3,35 @@ _S = os.path.join(os.path.dirname(__file__), "..", "04_assemble_kols.py")
 _spec = importlib.util.spec_from_file_location("asm", _S)
 mod = importlib.util.module_from_spec(_spec); _spec.loader.exec_module(mod)
 
-def test_score_is_sum_of_verified_counts_sorted():
-    hcps = [{"s_customer_id":"1","verified_web_count":1,"verified_pubmed_count":1,"verified_pubmed_years":{"2020":1}},
-            {"s_customer_id":"2","verified_web_count":3,"verified_pubmed_count":4,"verified_pubmed_years":{"2024":4}}]
-    out = mod.score_hcps(hcps)
-    assert out[0]["s_customer_id"] == "2" and out[0]["kol_score"] == 7
-    assert out[0]["latest_year"] == 2024
+def test_composite_replaces_raw_sum_as_score():
+    hcps = [{"verified_web_count": 1, "verified_pubmed_count": 1, "reach": {"distinct_coauthors": 0}, "ratio": {"ratio": 0.0}},
+            {"verified_web_count": 3, "verified_pubmed_count": 4, "reach": {"distinct_coauthors": 5}, "ratio": {"ratio": 1.0}}]
+    out = mod.apply_composite(hcps, {"relevance": 0.6, "reach": 0.25, "ratio": 0.15}, "minmax")
+    assert out[1]["kol_score"] > out[0]["kol_score"]
+
+def test_normalize_percentile_rank():
+    out = mod.normalize_values([10, 20, 30, 30], "percentile")
+    assert out[0] < out[1] < out[2] and out[2] == out[3]      # ties share a rank
+    assert 0.0 <= min(out) and max(out) <= 1.0
+
+def test_normalize_minmax():
+    assert mod.normalize_values([0, 5, 10], "minmax") == [0.0, 0.5, 1.0]
+
+def test_normalize_degenerate_pool_is_zero():
+    assert mod.normalize_values([7, 7, 7], "minmax") == [0.0, 0.0, 0.0]
+
+def test_apply_composite_weights_and_contributions():
+    hcps = [
+        {"verified_web_count": 4, "verified_pubmed_count": 0, "reach": {"distinct_coauthors": 0},
+         "ratio": {"ratio": 0.0}},
+        {"verified_web_count": 0, "verified_pubmed_count": 0, "reach": {"distinct_coauthors": 10},
+         "ratio": {"ratio": 1.0}}]
+    w = {"relevance": 0.6, "reach": 0.25, "ratio": 0.15}
+    out = mod.apply_composite(hcps, w, "minmax")
+    # HCP0 maxes relevance (norm 1 * .6), HCP1 maxes reach+ratio (.25 + .15 = .4)
+    assert abs(out[0]["kol_score"] - 0.6) < 1e-9
+    assert abs(out[1]["kol_score"] - 0.4) < 1e-9
+    assert "factor_contributions" in out[0]
 
 def test_rising_star_new_voice_on_verified_years():
     hcps = [{"verified_pubmed_years":{"2024":4,"2025":0}}]
