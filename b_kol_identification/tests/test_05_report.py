@@ -182,7 +182,9 @@ def test_network_node_prefers_real_affiliation_over_city():
 
 
 def test_network_node_falls_back_to_city_without_affiliations():
-    hcps = [{**DATA["hcps"][0], "affiliations": []}]
-    nodes = [{"name": h.get("name", ""), "reach": h.get("reach", {}).get("distinct_coauthors", 0),
-              "affiliation": ", ".join(h.get("affiliations", [])) or h.get("city", "")} for h in hcps]
-    assert nodes[0]["affiliation"] == "Berlin"
+    # Spec 9: when a KOL has no recorded co-author affiliations, the network
+    # graph's hover title must fall back to their practice city instead of
+    # leaving it blank.
+    data = {**DATA, "hcps": [{**DATA["hcps"][0], "affiliations": []}]}
+    html = mod.build_report_html(data)
+    assert "Anna Berg — Berlin (reach 0)</title>" in html

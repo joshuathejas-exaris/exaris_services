@@ -121,3 +121,21 @@ def test_top_affiliations_dedupes_case_insensitively_keeps_first_seen_casing():
         "p2": [{"FIRSTNAME": "Carl", "LASTNAME": "Ott", "AFFILIATION": "UNI A HOSPITAL"}]}
     out = mod.top_affiliations(["p1", "p2"], authors_by_pmid, "Self", "Hcp")
     assert out == ["Uni A Hospital"]
+
+def test_top_affiliations_caps_at_default_n_of_three():
+    # 4 distinct affiliations across verified pmids, with unambiguous frequencies
+    # (4, 3, 2, 1 mentions) -- only the top 3 by frequency should be returned.
+    authors_by_pmid = {
+        "p1": [{"FIRSTNAME": "A1", "LASTNAME": "X", "AFFILIATION": "Uni A"}],
+        "p2": [{"FIRSTNAME": "A2", "LASTNAME": "X", "AFFILIATION": "Uni A"}],
+        "p3": [{"FIRSTNAME": "A3", "LASTNAME": "X", "AFFILIATION": "Uni A"}],
+        "p4": [{"FIRSTNAME": "A4", "LASTNAME": "X", "AFFILIATION": "Uni A"}],
+        "p5": [{"FIRSTNAME": "B1", "LASTNAME": "X", "AFFILIATION": "Uni B"}],
+        "p6": [{"FIRSTNAME": "B2", "LASTNAME": "X", "AFFILIATION": "Uni B"}],
+        "p7": [{"FIRSTNAME": "B3", "LASTNAME": "X", "AFFILIATION": "Uni B"}],
+        "p8": [{"FIRSTNAME": "C1", "LASTNAME": "X", "AFFILIATION": "Uni C"}],
+        "p9": [{"FIRSTNAME": "C2", "LASTNAME": "X", "AFFILIATION": "Uni C"}],
+        "p10": [{"FIRSTNAME": "D1", "LASTNAME": "X", "AFFILIATION": "Uni D"}]}
+    out = mod.top_affiliations(list(authors_by_pmid.keys()), authors_by_pmid, "Self", "Hcp")
+    assert len(out) == 3
+    assert out == ["Uni A", "Uni B", "Uni C"]
