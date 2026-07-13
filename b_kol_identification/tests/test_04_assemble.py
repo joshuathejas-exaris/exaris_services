@@ -63,3 +63,22 @@ def test_rising_star_not_flagged_for_established_author():
     hcps = [{"verified_pubmed_years": {"2023": 1, "2025": 3}}]  # max 2025; a prior 2023 pub
     out = mod.flag_rising_stars(hcps, min_pubs=3, growth=1000.0)
     assert out[0]["rising_star"] is False
+
+def test_compute_reach_dedupes_by_orcid_and_excludes_self():
+    authors_by_pmid = {"p1": [
+        {"ORCID": "0000-1", "FIRSTNAME": "Anna", "LASTNAME": "Berg", "AFFILIATION": "Uni A"},
+        {"ORCID": "0000-2", "FIRSTNAME": "Carl", "LASTNAME": "Ott",  "AFFILIATION": "Uni B"},
+        {"ORCID": "0000-9", "FIRSTNAME": "Self", "LASTNAME": "Hcp",  "AFFILIATION": "Uni A"}],
+        "p2": [
+        {"ORCID": "0000-1", "FIRSTNAME": "Anna", "LASTNAME": "Berg", "AFFILIATION": "Uni A"}]}  # dup coauthor
+    r = mod.compute_reach(["p1", "p2"], authors_by_pmid, "Self", "Hcp")
+    assert r["distinct_coauthors"] == 2         # Anna + Carl, self excluded, Anna deduped
+    assert r["distinct_affiliations"] == 2      # Uni A + Uni B
+
+def test_compute_ratio_normal():
+    r = mod.compute_ratio(3, 2, 5, 5, min_denominator=5)
+    assert r["denominator"] == 10 and abs(r["ratio"] - 0.5) < 1e-9 and r["neutral"] is False
+
+def test_compute_ratio_low_denominator_is_neutral():
+    r = mod.compute_ratio(1, 0, 1, 0, min_denominator=5)
+    assert r["neutral"] is True and r["ratio"] == 0.0

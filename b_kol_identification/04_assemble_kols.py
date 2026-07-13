@@ -135,6 +135,36 @@ def build_coauthor_edges(author_rows: list, verified_by_pmid: dict, roster: list
     return edges
 
 
+def compute_reach(verified_pmids: list, authors_by_pmid: dict, hcp_first: str, hcp_last: str) -> dict:
+    """Distinct co-authors (dedup by ORCID, fallback normalized name; self excluded)
+    and distinct affiliations across the HCP's verified-relevant PubMed articles."""
+    from pipeline_common import name_matches, normalize_name
+    coauthors, affiliations = set(), set()
+    for pmid in verified_pmids:
+        for a in authors_by_pmid.get(str(pmid), []):
+            fn = str(_g(a, "FIRSTNAME") or ""); ln = str(_g(a, "LASTNAME") or "")
+            if name_matches(f"{fn} {ln}", hcp_first, hcp_last):
+                continue  # the HCP themselves
+            orcid = str(_g(a, "ORCID") or "").strip()
+            key = orcid or normalize_name(f"{fn} {ln}")
+            if key:
+                coauthors.add(key)
+            aff = normalize_name(str(_g(a, "AFFILIATION") or ""))
+            if aff:
+                affiliations.add(aff)
+    return {"distinct_coauthors": len(coauthors), "distinct_affiliations": len(affiliations)}
+
+
+def compute_ratio(verified_web: int, verified_pubmed: int,
+                  total_web: int, total_pubmed: int, min_denominator: int) -> dict:
+    """verified-relevant / all-sources (topic-agnostic). Neutral below min_denominator."""
+    numerator = int(verified_web) + int(verified_pubmed)
+    denominator = int(total_web) + int(total_pubmed)
+    if denominator < int(min_denominator) or denominator == 0:
+        return {"ratio": 0.0, "denominator": denominator, "neutral": True}
+    return {"ratio": min(numerator / denominator, 1.0), "denominator": denominator, "neutral": False}
+
+
 def build_comention_edges(hcps: list) -> list:
     edges = []
     for h in hcps:
@@ -184,15 +214,28 @@ def main():
     for h in hcps:
         for pmid in h.get("verified_pmids", []):
             verified_by_pmid.setdefault(pmid, []).append(h["s_customer_id"])
-    coauthor_edges = []
     all_pmids = list(verified_by_pmid.keys())
+    author_rows = []
     if all_pmids:
         conn = connect_snowflake(sf["aws_profile"], sf["warehouse"], sf["database"])
         cur = conn.cursor(snowflake.connector.DictCursor)
         cur.execute(build_coauthor_query(tb["pubmed_author"], all_pmids))
         author_rows = cur.fetchall(); cur.close(); conn.close()
-        coauthor_edges = build_coauthor_edges(author_rows, verified_by_pmid, roster)
+    coauthor_edges = build_coauthor_edges(author_rows, verified_by_pmid, roster) if all_pmids else []
     comention_edges = build_comention_edges(hcps)
+
+    # reach + ratio features (Task 5) — authors_by_pmid built from the same
+    # author_rows fetched above for the collaboration network
+    authors_by_pmid = {}
+    for r in author_rows:
+        authors_by_pmid.setdefault(str(_g(r, "PMID") or ""), []).append(r)
+    min_denom = int(sc["min_ratio_denominator"])
+    for h in hcps:
+        first = h["name"].split(" ")[0] if h["name"] else ""
+        last = h["name"].split(" ")[-1] if h["name"] else ""
+        h["reach"] = compute_reach(h.get("verified_pmids", []), authors_by_pmid, first, last)
+        h["ratio"] = compute_ratio(h.get("verified_web_count", 0), h.get("verified_pubmed_count", 0),
+                                   h.get("total_web_sources", 0), h.get("total_pubmed_sources", 0), min_denom)
 
     # strip bulky per-claim payload from the final file (keep top_quotes + counts)
     for h in hcps:
