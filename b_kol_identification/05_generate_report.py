@@ -69,34 +69,160 @@ def render_score_breakdown(hcp: dict, weights: dict) -> str:
             f'<div class="score-quotes"><strong>Evidence quotes:</strong><ul>{quotes}</ul></div></details>')
 
 
-def render_network_svg(edges: list, nodes: list, width: int = 720, height: int = 480) -> str:
-    if not nodes:
-        return '<svg width="1" height="1"></svg>'
-    cx, cy, r = width / 2, height / 2, min(width, height) / 2 - 60
-    pos, maxreach = {}, max((n.get("reach", 0) for n in nodes), default=1) or 1
-    for i, n in enumerate(nodes):
-        ang = 2 * math.pi * i / len(nodes)
-        pos[n["name"]] = (cx + r * math.cos(ang), cy + r * math.sin(ang))
-    lines = []
-    for e in edges:
+def _select_network(coauthor_edges: list, kol_nodes: list, max_external: int = 40):
+    """Pick the nodes+edges to draw: all KOLs + the most-connected external co-authors,
+    keeping only edges whose endpoints are both in the set, then drop isolated nodes.
+
+    Returns (nodes, edges) where each node is
+    {name, reach, affiliation, kol: bool, degree: int} and each edge is
+    {a, b, w, external: bool} (w = shared PubMed papers)."""
+    kol_by_name = {n["name"]: n for n in kol_nodes if n.get("name")}
+    # rank external co-authors by how many KOLs they bridge, then shared-paper volume
+    ext = {}
+    for e in coauthor_edges:
         a, b = e.get("a_name"), e.get("b_name")
-        if a in pos and b in pos:
-            (x1, y1), (x2, y2) = pos[a], pos[b]
-            w = 1 + min(int(e.get("shared_pmids", 1)), 6)
-            dash = ' stroke-dasharray="4"' if e.get("b_external") else ""
-            lines.append(f'<line x1="{x1:.0f}" y1="{y1:.0f}" x2="{x2:.0f}" y2="{y2:.0f}" '
-                         f'stroke="#9bb" stroke-width="{w}"{dash}/>')
-    circles = []
+        if a and b and e.get("b_external") and b not in kol_by_name:
+            s = ext.setdefault(b, {"deg": set(), "shared": 0})
+            s["deg"].add(a)
+            s["shared"] += int(e.get("shared_pmids", 0) or 0)
+    ranked = sorted(ext.items(), key=lambda kv: (len(kv[1]["deg"]), kv[1]["shared"], kv[0]), reverse=True)
+    keep_ext = {name for name, _ in ranked[:max_external]}
+
+    edges = []
+    for e in coauthor_edges:
+        a, b = e.get("a_name"), e.get("b_name")
+        if not a or not b or a == b or a not in kol_by_name:
+            continue
+        if b in kol_by_name or b in keep_ext:
+            edges.append({"a": a, "b": b, "w": int(e.get("shared_pmids", 0) or 0),
+                          "external": bool(e.get("b_external") and b not in kol_by_name)})
+
+    degree = {}
+    for e in edges:
+        degree[e["a"]] = degree.get(e["a"], 0) + 1
+        degree[e["b"]] = degree.get(e["b"], 0) + 1
+
+    nodes = []
+    for name in degree:  # only connected nodes — no lonely circles on a ring
+        kn = kol_by_name.get(name)
+        nodes.append({"name": name,
+                      "reach": (kn or {}).get("reach", 0),
+                      "affiliation": (kn or {}).get("affiliation", ""),
+                      "kol": name in kol_by_name,
+                      "degree": degree[name]})
+    return nodes, edges
+
+
+def _force_layout(names: list, edges: list, width: int, height: int, iterations: int = 90) -> dict:
+    """Deterministic Fruchterman-Reingold layout → {name: (x, y)} within a margin.
+
+    Deterministic (golden-angle seed, no RNG) so a given graph always lays out the
+    same way — reproducible across runs and testable."""
+    n = len(names)
+    if n == 0:
+        return {}
+    margin = 60
+    W, H = width - 2 * margin, height - 2 * margin
+    if n == 1:
+        return {names[0]: (margin + W / 2, margin + H / 2)}
+    ga = math.pi * (3 - math.sqrt(5))  # golden angle → even initial spread
+    pos = {}
+    for i, nm in enumerate(names):
+        rad = 0.45 * math.sqrt((i + 0.5) / n)
+        pos[nm] = [0.5 * W + rad * W * math.cos(i * ga), 0.5 * H + rad * H * math.sin(i * ga)]
+    adj = {}
+    for e in edges:
+        key = (e["a"], e["b"])
+        adj[key] = adj.get(key, 0) + e.get("w", 1)
+    k = 0.9 * math.sqrt((W * H) / n)  # ideal edge length
+    t = W * 0.10
+    cool = t / (iterations + 1)
+    for _ in range(iterations):
+        disp = {nm: [0.0, 0.0] for nm in names}
+        for i in range(n):
+            ni = names[i]
+            for j in range(i + 1, n):
+                nj = names[j]
+                dx, dy = pos[ni][0] - pos[nj][0], pos[ni][1] - pos[nj][1]
+                dist = math.hypot(dx, dy) or 0.01
+                f = (k * k) / dist
+                ux, uy = dx / dist, dy / dist
+                disp[ni][0] += ux * f; disp[ni][1] += uy * f
+                disp[nj][0] -= ux * f; disp[nj][1] -= uy * f
+        for (a, b), w in adj.items():
+            if a not in pos or b not in pos:
+                continue
+            dx, dy = pos[a][0] - pos[b][0], pos[a][1] - pos[b][1]
+            dist = math.hypot(dx, dy) or 0.01
+            f = (dist * dist) / k * (1 + 0.25 * math.log(1 + w))
+            ux, uy = dx / dist, dy / dist
+            disp[a][0] -= ux * f; disp[a][1] -= uy * f
+            disp[b][0] += ux * f; disp[b][1] += uy * f
+        for nm in names:
+            dx, dy = disp[nm]
+            d = math.hypot(dx, dy) or 0.01
+            pos[nm][0] = min(W, max(0.0, pos[nm][0] + (dx / d) * min(d, t)))
+            pos[nm][1] = min(H, max(0.0, pos[nm][1] + (dy / d) * min(d, t)))
+        t = max(t - cool, W * 0.005)
+    return {nm: (margin + pos[nm][0], margin + pos[nm][1]) for nm in names}
+
+
+def render_network_svg(coauthor_edges: list, kol_nodes: list, width: int = 1080, height: int = 620) -> str:
+    """Force-directed co-authorship graph as self-contained SVG. KOLs + their most
+    connected external co-authors are nodes (sized by reach); edges are shared PubMed
+    authorship (width = shared papers, dashed = external), labelled with the count.
+    Node <title>/data-aff carry affiliations; edge <title> carries the relation."""
+    nodes, edges = _select_network(coauthor_edges, kol_nodes)
+    if not nodes:
+        return ('<svg class="net-graph" width="100%" height="120" viewBox="0 0 600 120">'
+                '<text x="300" y="62" text-anchor="middle" fill="#5c6774" font-size="14">'
+                'No co-authorship connections among the top KOLs.</text></svg>')
+    names = [n["name"] for n in nodes]
+    pos = _force_layout(names, edges, width, height)
+    maxreach = max((n["reach"] for n in nodes), default=1) or 1
+    maxw = max((e["w"] for e in edges), default=1) or 1
+    label_cut = max(2, maxw // 3)
+
+    edge_svg = []
+    for e in edges:
+        (x1, y1), (x2, y2) = pos[e["a"]], pos[e["b"]]
+        sw = 1.2 + 3.8 * (e["w"] / maxw)
+        dash = ' stroke-dasharray="5 4"' if e["external"] else ""
+        rel = f'{e["w"]} shared PubMed paper' + ("s" if e["w"] != 1 else "")
+        edge_svg.append(
+            f'<line class="net-edge" data-a="{_esc(e["a"])}" data-b="{_esc(e["b"])}" '
+            f'x1="{x1:.1f}" y1="{y1:.1f}" x2="{x2:.1f}" y2="{y2:.1f}" '
+            f'stroke="#b6c2d1" stroke-width="{sw:.1f}"{dash}>'
+            f'<title>{_esc(e["a"])} ↔ {_esc(e["b"])} — {rel}</title></line>')
+        if e["w"] >= label_cut:
+            edge_svg.append(
+                f'<text class="net-edge-label" data-a="{_esc(e["a"])}" data-b="{_esc(e["b"])}" '
+                f'x="{(x1 + x2) / 2:.1f}" y="{(y1 + y2) / 2:.1f}">{e["w"]}</text>')
+
+    node_svg = []
     for n in nodes:
         x, y = pos[n["name"]]
-        rad = 6 + 14 * (n.get("reach", 0) / maxreach)
-        aff = _html.escape(str(n.get("affiliation", "")))
-        circles.append(f'<g><title>{_html.escape(n["name"])} — {aff} (reach {n.get("reach",0)})</title>'
-                       f'<circle cx="{x:.0f}" cy="{y:.0f}" r="{rad:.0f}" fill="#3a7"/>'
-                       f'<text x="{x:.0f}" y="{y-rad-3:.0f}" font-size="10" text-anchor="middle">'
-                       f'{_html.escape(n["name"])}</text></g>')
-    return (f'<svg width="{width}" height="{height}" viewBox="0 0 {width} {height}">'
-            f'{"".join(lines)}{"".join(circles)}</svg>')
+        if n["kol"]:
+            rad = 8 + 16 * (n["reach"] / maxreach)
+            fill = PALETTE["accent"]
+        else:
+            rad = 5 + min(n["degree"], 5)
+            fill = PALETTE["violet"]
+        aff = str(n.get("affiliation", "") or ("" if n["kol"] else "external co-author"))
+        title = _esc(n["name"]) + (f' — {_esc(aff)}' if aff else "") + \
+            (f' · reach {n["reach"]}' if n["kol"] else "")
+        g = (f'<g class="net-node{"" if n["kol"] else " ext"}" data-name="{_esc(n["name"])}" '
+             f'data-aff="{_esc(aff)}" data-kol="{"1" if n["kol"] else "0"}" data-reach="{n["reach"]}" '
+             f'data-x="{x:.1f}" data-y="{y:.1f}" transform="translate({x:.1f},{y:.1f})">'
+             f'<circle r="{rad:.1f}" fill="{fill}" stroke="#fff" stroke-width="1.5">'
+             f'<title>{title}</title></circle>')
+        if n["kol"] or n["degree"] >= 2:  # label KOLs + bridge externals; hide singleton externals
+            g += f'<text class="net-label" x="0" y="{-rad - 4:.1f}" text-anchor="middle">{_esc(n["name"])}</text>'
+        node_svg.append(g + "</g>")
+
+    return (f'<svg class="net-graph" viewBox="0 0 {width} {height}" '
+            f'preserveAspectRatio="xMidYMid meet" width="100%" height="{height}">'
+            f'<g class="net-zoom">{"".join(edge_svg)}{"".join(node_svg)}</g></svg>')
 
 
 def _recent_prior(pub_by_year):
@@ -337,6 +463,67 @@ document.addEventListener('DOMContentLoaded', function(){
 """
 
 
+NETWORK_SCRIPT = """
+<script>
+(function(){
+  var svg = document.querySelector('svg.net-graph');
+  if (!svg || !svg.querySelector('.net-zoom')) return;
+  var zoom = svg.querySelector('.net-zoom');
+  var wrap = svg.closest('.network-svg-wrap');
+  var tip = wrap ? wrap.querySelector('.net-tooltip') : null;
+  var vb = svg.viewBox.baseVal;
+  var scale = 1, tx = 0, ty = 0;
+  function apply(){ zoom.setAttribute('transform', 'translate(' + tx + ',' + ty + ') scale(' + scale + ')'); }
+  var panning = false, sx = 0, sy = 0;
+  svg.addEventListener('mousedown', function(ev){ panning = true; sx = ev.clientX; sy = ev.clientY; svg.style.cursor = 'grabbing'; });
+  window.addEventListener('mousemove', function(ev){ if (!panning) return; tx += ev.clientX - sx; ty += ev.clientY - sy; sx = ev.clientX; sy = ev.clientY; apply(); });
+  window.addEventListener('mouseup', function(){ panning = false; svg.style.cursor = ''; });
+  svg.addEventListener('wheel', function(ev){
+    ev.preventDefault();
+    var r = svg.getBoundingClientRect();
+    var mx = (ev.clientX - r.left) / r.width * vb.width;
+    var my = (ev.clientY - r.top) / r.height * vb.height;
+    var f = ev.deltaY < 0 ? 1.12 : 0.89;
+    var ns = Math.min(5, Math.max(0.25, scale * f));
+    tx = mx - (mx - tx) * (ns / scale); ty = my - (my - ty) * (ns / scale); scale = ns; apply();
+  }, { passive: false });
+  function showTip(html, ev){
+    if (!tip || !wrap) return;
+    tip.innerHTML = html; tip.style.display = 'block';
+    var r = wrap.getBoundingClientRect();
+    tip.style.left = (ev.clientX - r.left + 14) + 'px';
+    tip.style.top = (ev.clientY - r.top + 14) + 'px';
+  }
+  function hideTip(){ if (tip) tip.style.display = 'none'; }
+  var nodes = svg.querySelectorAll('.net-node');
+  for (var i = 0; i < nodes.length; i++){
+    (function(g){
+      g.addEventListener('mousemove', function(ev){
+        var kol = g.getAttribute('data-kol') === '1';
+        var aff = g.getAttribute('data-aff');
+        var html = '<b>' + g.getAttribute('data-name') + '</b>' + (kol ? '<span class="tip-tag">KOL</span>' : '<span class="tip-tag ext">co-author</span>');
+        if (kol) html += '<br>reach: ' + g.getAttribute('data-reach') + ' co-authors';
+        if (aff) html += '<br>' + aff;
+        showTip(html, ev);
+      });
+      g.addEventListener('mouseleave', hideTip);
+    })(nodes[i]);
+  }
+  var edges = svg.querySelectorAll('.net-edge');
+  for (var j = 0; j < edges.length; j++){
+    (function(l){
+      l.addEventListener('mousemove', function(ev){
+        var t = l.querySelector('title');
+        showTip(t ? t.textContent : '', ev);
+      });
+      l.addEventListener('mouseleave', hideTip);
+    })(edges[j]);
+  }
+})();
+</script>
+"""
+
+
 def _render_sidebar(groups):
     """groups: list of (group_label, [(item_label, panel_html), ...]). Sticky left nav
     beside a content pane of panels; first item active on load; degrades to full scroll
@@ -371,7 +558,7 @@ def build_report_html(data, weights=None, as_of_year_cfg="latest"):
     css = f"""
       body{{margin:0;background:{PALETTE['bg']};color:{PALETTE['ink']};
         font:15px/1.55 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif}}
-      .wrap{{max-width:1100px;margin:0 auto;padding:28px 22px 64px}}
+      .wrap{{max-width:1360px;margin:0 auto;padding:28px 34px 64px}}
       h1{{margin:4px 0}} h2{{border-top:1px solid {PALETTE['line']};padding-top:14px;margin-top:34px}}
       table{{border-collapse:collapse;width:100%;font-size:13px;margin:10px 0}}
       th,td{{border:1px solid {PALETTE['line']};padding:7px 10px;text-align:left;vertical-align:top}}
@@ -410,7 +597,27 @@ def build_report_html(data, weights=None, as_of_year_cfg="latest"):
       details.score-breakdown summary{{cursor:pointer;color:{PALETTE['accent']};font-weight:600}}
       details.score-breakdown table{{font-size:12px;margin:6px 0}}
       .score-quotes{{margin-top:6px}} .score-quotes ul{{margin:4px 0;padding-left:18px}}
-      .network-svg-wrap{{overflow-x:auto;margin:10px 0}}
+      .network-svg-wrap{{position:relative;overflow:hidden;margin:10px 0;
+        border:1px solid {PALETTE['line']};border-radius:10px;background:{PALETTE['card']}}}
+      svg.net-graph{{display:block;cursor:grab;touch-action:none;
+        background:radial-gradient(circle at 1px 1px,#eef2f7 1px,transparent 0) 0 0/22px 22px}}
+      .net-edge{{stroke:#b6c2d1}} .net-edge:hover{{stroke:{PALETTE['accent']}}}
+      .net-edge-label{{fill:{PALETTE['muted']};font-size:10px;text-anchor:middle;pointer-events:none;
+        paint-order:stroke;stroke:{PALETTE['card']};stroke-width:3px}}
+      .net-node{{cursor:pointer}}
+      .net-node:hover circle{{stroke:{PALETTE['ink']};stroke-width:2.5}}
+      .net-label{{font-size:11px;fill:{PALETTE['ink']};pointer-events:none;font-weight:600;
+        paint-order:stroke;stroke:{PALETTE['card']};stroke-width:3px}}
+      .net-tooltip{{position:absolute;display:none;pointer-events:none;z-index:5;max-width:260px;
+        background:{PALETTE['ink']};color:#fff;font-size:12px;line-height:1.45;padding:7px 10px;
+        border-radius:7px;box-shadow:0 4px 14px rgba(0,0,0,.25)}}
+      .net-tooltip .tip-tag{{font-size:10px;background:{PALETTE['accent']};padding:1px 6px;
+        border-radius:8px;margin-left:4px}}
+      .net-tooltip .tip-tag.ext{{background:{PALETTE['violet']}}}
+      .net-legend{{display:flex;gap:18px;flex-wrap:wrap;font-size:12px;color:{PALETTE['muted']};padding:8px 4px 0}}
+      .net-legend .dot{{display:inline-block;width:11px;height:11px;border-radius:50%;
+        margin-right:5px;vertical-align:middle}}
+      .net-hint{{font-size:11px;color:{PALETTE['muted']};padding:2px 4px 6px}}
       .layout{{display:flex;gap:28px;align-items:flex-start;margin:18px 0 8px}}
       .sidebar{{flex:0 0 210px;position:sticky;top:16px;align-self:flex-start}}
       .content{{flex:1 1 auto;min-width:0}}
@@ -464,13 +671,23 @@ def build_report_html(data, weights=None, as_of_year_cfg="latest"):
         "Cell shading shows how concentrated a KOL's verified claims are on that theme "
         "relative to other KOLs in the top list -- darker cells mean more verified claims "
         "on that theme.")
+    net_legend = (
+        f'<div class="net-legend">'
+        f'<span><span class="dot" style="background:{PALETTE["accent"]}"></span>KOL (size = co-author reach)</span>'
+        f'<span><span class="dot" style="background:{PALETTE["violet"]}"></span>External co-author</span>'
+        f'<span>line = shared PubMed papers (label = count · dashed = external)</span></div>'
+        f'<div class="net-hint">Scroll to zoom · drag the background to pan · '
+        f'hover a node for its institutions, or an edge for the shared-paper count.</div>')
     network_section = _splice_explainer(
         f'<h2>Collaboration network</h2>'
-        f'<div class="network-svg-wrap">{render_network_svg(data.get("coauthor_edges", []), network_nodes)}</div>'
+        f'<div class="network-svg-wrap">{render_network_svg(data.get("coauthor_edges", []), network_nodes)}'
+        f'<div class="net-tooltip"></div></div>'
+        f'{net_legend}'
         f'{render_network(data["coauthor_edges"], data["comention_edges"], top)}',
-        "Nodes are KOLs sized by co-author reach; edges are shared PubMed authorship "
-        "(thicker = more shared publications, dashed = an external, non-mapped co-author). "
-        "The tables below list every edge in detail.")
+        "This is the co-authorship graph: each node is a KOL (blue, sized by how many distinct "
+        "co-authors they have) or a frequently-shared external co-author (purple); each line is "
+        "shared PubMed authorship, thicker and labelled with the number of shared papers, dashed "
+        "when the co-author is external. Only connected KOLs appear here. The tables below list every edge.")
     groups = [
         ("OVERVIEW", [
             ("Executive Dashboard", f'<h2>Executive dashboard</h2>{render_stat_cards(data)}'),
@@ -489,7 +706,7 @@ def build_report_html(data, weights=None, as_of_year_cfg="latest"):
     header = (f'<h1>KOL Identification — {_esc(data["indication"])}</h1>'
               f'<p class="muted">Client drug: {_esc(data["client_drug"])} · '
               f'generated {_esc(data["generated_at"])}</p>' + banner)
-    body = header + "\n" + _render_sidebar(groups) + "\n" + TAB_SCRIPT
+    body = header + "\n" + _render_sidebar(groups) + "\n" + TAB_SCRIPT + NETWORK_SCRIPT
     return f"""<!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>KOL Report — {_esc(data['indication'])}</title><style>{css}</style></head>

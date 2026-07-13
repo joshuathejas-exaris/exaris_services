@@ -183,6 +183,32 @@ def test_network_svg_is_selfcontained():
     assert "<svg" in svg and "http://" not in svg and "https://" not in svg
     assert "Uni A" in svg   # affiliation surfaced (label/title)
 
+def test_select_network_includes_externals_and_drops_isolated_kols():
+    kol_nodes = [{"name": "Anna Berg", "reach": 4, "affiliation": "Uni A"},
+                 {"name": "Carl Ott", "reach": 2, "affiliation": "Uni B"},
+                 {"name": "Lonely Kol", "reach": 0, "affiliation": ""}]  # no edges -> dropped
+    edges_in = [
+        {"a_name": "Anna Berg", "b_name": "Carl Ott", "shared_pmids": 3, "b_external": False},
+        {"a_name": "Anna Berg", "b_name": "Ext P", "shared_pmids": 2, "b_external": True},
+    ]
+    nodes, edges = mod._select_network(edges_in, kol_nodes)
+    names = {n["name"] for n in nodes}
+    assert "Anna Berg" in names and "Carl Ott" in names and "Ext P" in names
+    assert "Lonely Kol" not in names                      # isolated KOL dropped
+    assert any(n["name"] == "Ext P" and n["kol"] is False for n in nodes)
+    assert len(edges) == 2
+
+def test_force_layout_spreads_nodes_within_bounds_and_deterministic():
+    names = [f"n{i}" for i in range(12)]
+    edges = [{"a": "n0", "b": f"n{i}", "w": 1} for i in range(1, 6)]
+    p1 = mod._force_layout(names, edges, 1080, 620)
+    p2 = mod._force_layout(names, edges, 1080, 620)
+    assert p1 == p2                                        # deterministic
+    xs = [x for x, _ in p1.values()]; ys = [y for _, y in p1.values()]
+    assert all(0 <= x <= 1080 for x in xs) and all(0 <= y <= 620 for y in ys)
+    # genuinely 2-D spread, not all on one circle: both axes cover real range
+    assert max(xs) - min(xs) > 200 and max(ys) - min(ys) > 150
+
 def test_score_breakdown_shows_three_factors():
     hcp = {"name": "X", "kol_score": 0.72,
            "factor_contributions": {"relevance": 0.5, "reach": 0.15, "ratio": 0.07},
@@ -213,4 +239,5 @@ def test_network_node_falls_back_to_city_without_affiliations():
     # leaving it blank.
     data = {**DATA, "hcps": [{**DATA["hcps"][0], "affiliations": []}]}
     html = mod.build_report_html(data)
-    assert "Anna Berg — Berlin (reach 0)</title>" in html
+    assert "Anna Berg — Berlin · reach 0</title>" in html
+    assert 'data-aff="Berlin"' in html
