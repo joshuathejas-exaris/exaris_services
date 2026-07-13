@@ -3,7 +3,7 @@ Stage 05: Generate the KOL report (HTML top-25) + Excel.
 Reads:  data/kol_final.json
 Writes: results/kol_report_<ts>.html  and  results/kol_report_<ts>.xlsx
 """
-import configparser, json, logging, os, re, sys
+import configparser, html as _html, json, logging, math, os, re, sys
 from datetime import datetime
 
 logging.basicConfig(format="%(asctime)s [%(levelname)s] %(message)s", level=logging.INFO)
@@ -29,6 +29,76 @@ def _rgba(hex_color, alpha):
     return f"rgba({r},{g},{b},{alpha})"
 
 
+# Fallback composite weights (Task 6 defaults) used when the caller does not pass
+# the run's actual [scoring] weights through to the report renderer.
+DEFAULT_WEIGHTS = {"relevance": 0.60, "reach": 0.25, "ratio": 0.15}
+
+
+def as_of_banner(anchor_year, as_of_year_cfg) -> str:
+    if not as_of_year_cfg or str(as_of_year_cfg).strip().lower() == "latest":
+        return ""
+    return (f'<div class="asof-banner">Backtest view — PubMed capped at {anchor_year}. '
+            f'Web sources are timestamp-free and shown as-is (frozen across years).</div>')
+
+
+def section_explainer(text: str) -> str:
+    return f'<p class="explainer"><strong>How to read this:</strong> {_html.escape(text)}</p>'
+
+
+def render_score_breakdown(hcp: dict, weights: dict) -> str:
+    fc = hcp.get("factor_contributions", {})
+    reach = hcp.get("reach", {}); ratio = hcp.get("ratio", {})
+    rows = [
+        ("Relevance", weights["relevance"], hcp.get("norm_relevance", 0), fc.get("relevance", 0),
+         f'{hcp.get("verified_web_count",0)+hcp.get("verified_pubmed_count",0)} verified sources'),
+        ("Reach", weights["reach"], hcp.get("norm_reach", 0), fc.get("reach", 0),
+         f'{reach.get("distinct_coauthors",0)} co-authors, {reach.get("distinct_affiliations",0)} institutions'),
+        ("Ratio", weights["ratio"], hcp.get("norm_ratio", 0), fc.get("ratio", 0),
+         f'{ratio.get("ratio",0):.0%} of {ratio.get("denominator",0)} total sources'),
+    ]
+    tr = "".join(
+        f'<tr><td>{name}</td><td>{w:.2f}</td><td>{norm:.2f}</td><td>{contrib:.3f}</td><td>{_html.escape(ev)}</td></tr>'
+        for (name, w, norm, contrib, ev) in rows)
+    quotes = "".join(
+        f'<li>“{_html.escape(q["quote"])}” '
+        f'<a href="{_html.escape(q.get("url",""))}">source</a></li>'
+        for q in hcp.get("top_quotes", []))
+    return (f'<details class="score-breakdown"><summary>Composite {hcp.get("kol_score",0):.2f} — how it was scored</summary>'
+            f'<table><thead><tr><th>Factor</th><th>Weight</th><th>Norm</th><th>Contribution</th><th>Evidence</th></tr></thead>'
+            f'<tbody>{tr}</tbody></table>'
+            f'<div class="score-quotes"><strong>Evidence quotes:</strong><ul>{quotes}</ul></div></details>')
+
+
+def render_network_svg(edges: list, nodes: list, width: int = 720, height: int = 480) -> str:
+    if not nodes:
+        return '<svg width="1" height="1"></svg>'
+    cx, cy, r = width / 2, height / 2, min(width, height) / 2 - 60
+    pos, maxreach = {}, max((n.get("reach", 0) for n in nodes), default=1) or 1
+    for i, n in enumerate(nodes):
+        ang = 2 * math.pi * i / len(nodes)
+        pos[n["name"]] = (cx + r * math.cos(ang), cy + r * math.sin(ang))
+    lines = []
+    for e in edges:
+        a, b = e.get("a_name"), e.get("b_name")
+        if a in pos and b in pos:
+            (x1, y1), (x2, y2) = pos[a], pos[b]
+            w = 1 + min(int(e.get("shared_pmids", 1)), 6)
+            dash = ' stroke-dasharray="4"' if e.get("b_external") else ""
+            lines.append(f'<line x1="{x1:.0f}" y1="{y1:.0f}" x2="{x2:.0f}" y2="{y2:.0f}" '
+                         f'stroke="#9bb" stroke-width="{w}"{dash}/>')
+    circles = []
+    for n in nodes:
+        x, y = pos[n["name"]]
+        rad = 6 + 14 * (n.get("reach", 0) / maxreach)
+        aff = _html.escape(str(n.get("affiliation", "")))
+        circles.append(f'<g><title>{_html.escape(n["name"])} — {aff} (reach {n.get("reach",0)})</title>'
+                       f'<circle cx="{x:.0f}" cy="{y:.0f}" r="{rad:.0f}" fill="#3a7"/>'
+                       f'<text x="{x:.0f}" y="{y-rad-3:.0f}" font-size="10" text-anchor="middle">'
+                       f'{_html.escape(n["name"])}</text></g>')
+    return (f'<svg width="{width}" height="{height}" viewBox="0 0 {width} {height}">'
+            f'{"".join(lines)}{"".join(circles)}</svg>')
+
+
 def _recent_prior(pub_by_year):
     """Recent (current + prior year) vs. prior publication counts, from a year->count dict."""
     years = {int(y): int(c) for y, c in (pub_by_year or {}).items() if str(y).isdigit()}
@@ -52,7 +122,8 @@ def render_stat_cards(data):
     return f'<div class="stats">{cells}</div>'
 
 
-def render_kol_table(hcps, top_n):
+def render_kol_table(hcps, top_n, weights=None):
+    weights = weights or DEFAULT_WEIGHTS
     rows = ""
     for i, h in enumerate(hcps[:top_n], 1):
         themes = ", ".join(_esc(t["term_en"]) for t in h.get("theme_labels", [])[:3])
@@ -62,7 +133,8 @@ def render_kol_table(hcps, top_n):
                  f'<td><b>{_esc(h["name"])}</b><br><span class="muted">{_esc(h["specialty"])}</span></td>'
                  f'<td>{_esc(h["city"])}</td>'
                  f'<td><b>{h["kol_score"]}</b> '
-                 f'<span class="muted">({h.get("verified_web_count",0)}w / {h.get("verified_pubmed_count",0)}p)</span></td>'
+                 f'<span class="muted">({h.get("verified_web_count",0)}w / {h.get("verified_pubmed_count",0)}p)</span>'
+                 f'{render_score_breakdown(h, weights)}</td>'
                  f'<td>{h.get("latest_year","")}</td><td>{themes}</td></tr>')
     return (f'<table><thead><tr><th>#</th><th>Tier</th><th>Name / Specialty</th><th>City</th>'
             f'<th>Verified sources</th><th>Latest</th><th>Themes</th></tr></thead><tbody>{rows}</tbody></table>')
@@ -190,7 +262,8 @@ def render_network(coauthor_edges, comention_edges, hcps):
 _SENT_COLOR_KEY = {"positive": "pos", "negative": "neg"}
 
 
-def render_profiles(hcps, all_years, top_n=10):
+def render_profiles(hcps, all_years, top_n=10, weights=None):
+    weights = weights or DEFAULT_WEIGHTS
     year_range = f"{all_years[0]}–{all_years[-1]}" if all_years else ""
     cards = ""
     for h in hcps[:top_n]:
@@ -217,7 +290,7 @@ def render_profiles(hcps, all_years, top_n=10):
             f'{meta}'
             f'<div style="margin:.5rem 0">{spark}'
             f'<span class="muted spark-label">pubs/yr ({year_range})</span></div>'
-            f'<div>{themes}</div>{quotes}</div>'
+            f'<div>{themes}</div>{quotes}{render_score_breakdown(h, weights)}</div>'
         )
     return f'<h2>Individual KOL Profiles — Top {top_n}</h2><div class="profile-grid">{cards}</div>'
 
@@ -289,7 +362,8 @@ def _render_sidebar(groups):
     return '<div class="layout">\n' + "\n".join(nav) + "\n" + content + "\n</div>"
 
 
-def build_report_html(data):
+def build_report_html(data, weights=None, as_of_year_cfg="latest"):
+    weights = weights or DEFAULT_WEIGHTS
     all_years = build_year_axis(data)
     top_n = 25
     css = f"""
@@ -325,6 +399,16 @@ def build_report_html(data):
       .city-bar{{height:16px;display:flex;border-radius:3px;overflow:hidden;flex-shrink:0}}
       .quote{{font-size:12px;font-style:italic;padding:4px 8px;margin-top:6px;color:{PALETTE['ink']}}}
       .quote a{{font-style:normal;font-size:11px;color:{PALETTE['accent']}}}
+      .asof-banner{{background:#fdf3e3;border:1px solid {PALETTE['amber']};color:{PALETTE['ink']};
+        border-radius:8px;padding:10px 14px;margin:10px 0;font-size:13px}}
+      .explainer{{background:#eef2f7;border-left:3px solid {PALETTE['accent']};color:{PALETTE['muted']};
+        border-radius:0 6px 6px 0;padding:6px 12px;margin:8px 0 14px;font-size:13px}}
+      .explainer strong{{color:{PALETTE['ink']}}}
+      details.score-breakdown{{margin-top:6px;font-size:12px}}
+      details.score-breakdown summary{{cursor:pointer;color:{PALETTE['accent']};font-weight:600}}
+      details.score-breakdown table{{font-size:12px;margin:6px 0}}
+      .score-quotes{{margin-top:6px}} .score-quotes ul{{margin:4px 0;padding-left:18px}}
+      .network-svg-wrap{{overflow-x:auto;margin:10px 0}}
       .layout{{display:flex;gap:28px;align-items:flex-start;margin:18px 0 8px}}
       .sidebar{{flex:0 0 210px;position:sticky;top:16px;align-self:flex-start}}
       .content{{flex:1 1 auto;min-width:0}}
@@ -342,26 +426,66 @@ def build_report_html(data):
         .layout{{flex-direction:column;gap:8px}} .sidebar{{position:static;flex-basis:auto;width:100%}}}}
     """
     top = data["hcps"]
+    # City is the only per-HCP institution-like field carried into kol_final.json
+    # (Stage 04 keeps distinct_affiliations as a count, not the affiliation strings
+    # themselves) -- used here as the network node's display "affiliation".
+    network_nodes = [{"name": h.get("name", ""),
+                       "reach": h.get("reach", {}).get("distinct_coauthors", 0),
+                       "affiliation": h.get("city", "")} for h in top]
+    banner = as_of_banner(data.get("anchor_year"), as_of_year_cfg)
+
+    def _splice_explainer(section_html: str, explainer_text: str) -> str:
+        """Insert section_explainer(...) right after a section's leading <h2>...</h2>."""
+        exp = section_explainer(explainer_text)
+        marker = "</h2>"
+        idx = section_html.find(marker)
+        if idx == -1:
+            return exp + section_html
+        idx += len(marker)
+        return section_html[:idx] + exp + section_html[idx:]
+
+    kol_ranking_section = _splice_explainer(
+        f'<h2>KOL Ranking — Top {top_n}</h2>{render_kol_table(top, top_n, weights)}',
+        "KOLs are ranked by a composite score that blends Relevance (LLM-verified topical "
+        "engagement), Reach (co-author and institution breadth), and Ratio (the share of the "
+        "KOL's total output that is on-topic); expand a row's score to see each factor's "
+        "weight and contribution.")
+    rising_section = _splice_explainer(
+        render_rising_stars(top, all_years)
+        or '<h2>Rising Stars</h2><p class="muted">No rising stars identified.</p>',
+        "A KOL is flagged Rising when their verified PubMed output in the most recent years "
+        "accelerates sharply versus prior years, or when they have no prior verified output "
+        "at all (a new voice).")
+    thematic_section = _splice_explainer(
+        render_thematic_heatmap(top, data.get("pca_terms", []), top_n=top_n),
+        "Cell shading shows how concentrated a KOL's verified claims are on that theme "
+        "relative to other KOLs in the top list -- darker cells mean more verified claims "
+        "on that theme.")
+    network_section = _splice_explainer(
+        f'<h2>Collaboration network</h2>'
+        f'<div class="network-svg-wrap">{render_network_svg(data.get("coauthor_edges", []), network_nodes)}</div>'
+        f'{render_network(data["coauthor_edges"], data["comention_edges"], top)}',
+        "Nodes are KOLs sized by co-author reach; edges are shared PubMed authorship "
+        "(thicker = more shared publications, dashed = an external, non-mapped co-author). "
+        "The tables below list every edge in detail.")
     groups = [
         ("OVERVIEW", [
             ("Executive Dashboard", f'<h2>Executive dashboard</h2>{render_stat_cards(data)}'),
-            ("KOL Ranking", f'<h2>KOL Ranking — Top {top_n}</h2>{render_kol_table(top, top_n)}'),
+            ("KOL Ranking", kol_ranking_section),
         ]),
         ("ANALYSIS", [
-            ("Rising Stars", render_rising_stars(top, all_years)
-                or '<h2>Rising Stars</h2><p class="muted">No rising stars identified.</p>'),
-            ("Thematic Distribution", render_thematic_heatmap(top, data.get("pca_terms", []), top_n=top_n)),
+            ("Rising Stars", rising_section),
+            ("Thematic Distribution", thematic_section),
             ("Regional Distribution", render_regional(top)),
-            ("Collaboration Network",
-             f'<h2>Collaboration network</h2>{render_network(data["coauthor_edges"], data["comention_edges"], top)}'),
+            ("Collaboration Network", network_section),
         ]),
         ("PROFILES", [
-            ("KOL Profiles", render_profiles(top, all_years, top_n=top_n)),
+            ("KOL Profiles", render_profiles(top, all_years, top_n=top_n, weights=weights)),
         ]),
     ]
     header = (f'<h1>KOL Identification — {_esc(data["indication"])}</h1>'
               f'<p class="muted">Client drug: {_esc(data["client_drug"])} · '
-              f'generated {_esc(data["generated_at"])}</p>')
+              f'generated {_esc(data["generated_at"])}</p>' + banner)
     body = header + "\n" + _render_sidebar(groups) + "\n" + TAB_SCRIPT
     return f"""<!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
@@ -376,16 +500,25 @@ def write_excel(data: dict, path: str) -> None:
     wb = openpyxl.Workbook(); ws = wb.active; ws.title = "KOLs"
     headers = ["Rank", "Name", "Specialty", "City", "Tier", "Rising star",
                "Verified sources", "Web", "PubMed", "Latest year", "Top themes",
-               "Representative quote", "Source URL"]
+               "Representative quote", "Source URL",
+               "norm_relevance", "norm_reach", "norm_ratio",
+               "contribution_relevance", "contribution_reach", "contribution_ratio",
+               "distinct_coauthors", "distinct_affiliations", "relevance_ratio"]
     ws.append(headers)
     for i, h in enumerate(data["hcps"], 1):
         q = (h.get("top_quotes") or [{}])[0]
+        fc = h.get("factor_contributions", {})
+        reach = h.get("reach", {}); ratio = h.get("ratio", {})
         ws.append([i, h["name"], h["specialty"], h["city"], h.get("tier", ""),
                    "yes" if h.get("rising_star") else "", h.get("kol_score", 0),
                    h.get("verified_web_count", 0), h.get("verified_pubmed_count", 0),
                    h.get("latest_year", ""),
                    ", ".join(t["term_en"] for t in h.get("theme_labels", [])[:5]),
-                   q.get("quote", ""), q.get("url", "")])
+                   q.get("quote", ""), q.get("url", ""),
+                   h.get("norm_relevance", 0), h.get("norm_reach", 0), h.get("norm_ratio", 0),
+                   fc.get("relevance", 0), fc.get("reach", 0), fc.get("ratio", 0),
+                   reach.get("distinct_coauthors", 0), reach.get("distinct_affiliations", 0),
+                   ratio.get("ratio", 0)])
     wb.save(path)
 
 
@@ -394,12 +527,17 @@ def main():
     p = argparse.ArgumentParser(); p.add_argument("--force", action="store_true")
     args = p.parse_args()
     cfg = configparser.ConfigParser(); cfg.read(os.path.join(_DIR, "config.ini"))
+    sc = cfg["scoring"] if cfg.has_section("scoring") else {}
+    weights = {"relevance": float(sc.get("weight_relevance", DEFAULT_WEIGHTS["relevance"])),
+               "reach": float(sc.get("weight_reach", DEFAULT_WEIGHTS["reach"])),
+               "ratio": float(sc.get("weight_ratio", DEFAULT_WEIGHTS["ratio"]))}
+    as_of_year_cfg = cfg["funnel"].get("as_of_year", "latest") if cfg.has_section("funnel") else "latest"
     with open(os.path.join(_DIR, "data", "kol_final.json"), encoding="utf-8") as f:
         data = json.load(f)
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     html_path = os.path.join(_DIR, "results", f"kol_report_{ts}.html")
     with open(html_path, "w", encoding="utf-8") as f:
-        f.write(build_report_html(data))
+        f.write(build_report_html(data, weights=weights, as_of_year_cfg=as_of_year_cfg))
     log.info(f"Wrote {html_path}")
     xlsx_path = os.path.join(_DIR, "results", f"kol_report_{ts}.xlsx")
     write_excel(data, xlsx_path)

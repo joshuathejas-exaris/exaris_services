@@ -146,3 +146,28 @@ def test_write_excel_creates_one_row_per_kol(tmp_path):
     headers = [c.value for c in ws[1]]
     assert "Name" in headers and "Verified sources" in headers and "Tier" in headers
     assert ws.max_row == 1 + len(DATA["hcps"])
+
+
+# ── Task 7: network graph, score drill-down, per-section explainers ────────────
+
+def test_network_svg_is_selfcontained():
+    svg = mod.render_network_svg(
+        [{"a_name": "A B", "b_name": "C D", "shared_pmids": 2, "b_external": False}],
+        [{"name": "A B", "reach": 3, "affiliation": "Uni A"}, {"name": "C D", "reach": 1, "affiliation": "Uni B"}])
+    assert "<svg" in svg and "http://" not in svg and "https://" not in svg
+    assert "Uni A" in svg   # affiliation surfaced (label/title)
+
+def test_score_breakdown_shows_three_factors():
+    hcp = {"name": "X", "kol_score": 0.72,
+           "factor_contributions": {"relevance": 0.5, "reach": 0.15, "ratio": 0.07},
+           "norm_relevance": 0.83, "norm_reach": 0.6, "norm_ratio": 0.47,
+           "reach": {"distinct_coauthors": 6, "distinct_affiliations": 3},
+           "ratio": {"ratio": 0.47, "denominator": 17},
+           "top_quotes": [{"quote": "q", "url": "u", "sentiment": "positive"}]}
+    html = mod.render_score_breakdown(hcp, {"relevance": 0.6, "reach": 0.25, "ratio": 0.15})
+    for token in ("Relevance", "Reach", "Ratio", "0.72", "6", "q"):
+        assert token in html
+
+def test_as_of_banner_only_when_backtesting():
+    assert mod.as_of_banner(2021, "2021") != ""
+    assert mod.as_of_banner(2025, "latest") == ""
