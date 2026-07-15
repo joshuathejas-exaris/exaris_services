@@ -31,3 +31,17 @@ def test_vendored_modules_import():
     for name in ("vector_creator.py", "reranker.py"):
         p = os.path.join(os.path.dirname(__file__), "..", name)
         assert os.path.exists(p)
+
+def test_tenure_and_floor_keys_present():
+    c = _cfg()
+    # funnel keys: positive ints for scoring windows and candidate counts
+    assert c["funnel"].getint("pubmed_window_years") > 0
+    assert c["funnel"].getint("pub_history_years") > 0
+    assert c["funnel"].getint("top_n_candidates") > 0
+    # scoring keys: tenure, floor thresholds
+    sc = c["scoring"]
+    assert sc.getint("rising_star_max_tenure_years") > 0
+    assert sc.getint("kol_floor_min_verified") > 0
+    assert 0.0 < sc.getfloat("kol_floor_min_ratio") <= 1.0
+    assert sc.getint("kol_floor_active_within_yrs") > 0
+    assert sc.getint("kol_floor_min_coauthors") > 0
