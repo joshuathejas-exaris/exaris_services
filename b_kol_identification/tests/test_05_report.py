@@ -277,6 +277,32 @@ def test_career_stage_label_variants():
     assert mod.career_stage_label({"relevant_tenure": None}) == "—"
 
 
+# ── Final-review fix: tier=None (non-KOL/rising-star) must not crash rendering ──
+
+def test_report_survives_none_tier_top_of_list_hcp():
+    # Stage 04's assign_tiers sets tier=None for every non-KOL HCP (rising stars and
+    # floor-failing HCPs). A high-scoring non-KOL near the top of the score-sorted
+    # list must not crash the report with `None.lower()` / a KeyError.
+    breakout_star = {**DATA["hcps"][0], "s_customer_id": "99", "name": "Nora Fast",
+                     "kol_score": 0.95, "tier": None, "is_kol": False, "rising_star": True,
+                     "breakout": True, "relevant_tenure": 2}
+    hcps = [breakout_star] + DATA["hcps"]
+    data = {**DATA, "hcps": hcps}
+    html = mod.build_report_html(data)   # must not raise
+    assert "Nora Fast" in html
+
+
+def test_kol_table_and_profiles_render_none_tier_without_raising():
+    breakout_star = {**DATA["hcps"][0], "s_customer_id": "99", "name": "Nora Fast",
+                     "kol_score": 0.95, "tier": None, "is_kol": False, "rising_star": True}
+    hcps = [breakout_star] + DATA["hcps"]
+    table_html = mod.render_kol_table(hcps, top_n=25)   # must not raise
+    assert "Nora Fast" in table_html
+    assert 'class="pill none"' in table_html
+    profiles_html = mod.render_profiles(hcps, ["2023", "2024"], top_n=10)   # must not raise
+    assert "Nora Fast" in profiles_html
+
+
 def test_established_new_to_topic_detects_veteran_pivot():
     # publishes since 2008 (long total span) but first RELEVANT year 2017 (short tenure)
     hcp = {"total_pub_by_year": {"2008": 2, "2012": 3, "2017": 1, "2018": 2},

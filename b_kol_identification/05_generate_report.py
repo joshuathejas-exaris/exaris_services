@@ -293,7 +293,7 @@ def render_kol_table(hcps, top_n, weights=None):
     rows = ""
     for i, h in enumerate(hcps[:top_n], 1):
         themes = ", ".join(_esc(t["term_en"]) for t in h.get("theme_labels", [])[:3])
-        badge = f'<span class="pill {h.get("tier","C").lower()}">{h.get("tier","C")}</span>'
+        badge = f'<span class="pill {(h.get("tier") or "none").lower()}">{h.get("tier") or "—"}</span>'
         rising = ' <span class="pill rise">Rising</span>' if h.get("rising_star") else ""
         stage = f' <span class="pill stage">{_esc(career_stage_label(h))}</span>'
         rows += (f'<tr><td>{i}</td><td>{badge}{rising}{stage}</td>'
@@ -356,7 +356,7 @@ def render_year_bars(total_by_year, relevant_by_year, all_years, width=190, heig
             f'{"".join(rects)}{"".join(labels)}</svg>')
 
 
-def render_score_dev_chart(trajectory, thresh_a, thresh_b, width=320, height=120):
+def render_score_dev_chart(trajectory, thresh_a, thresh_b, width=320, height=120, rising_max=RISING_MAX_TENURE_DEFAULT):
     """Line chart of composite score over years with A/B/C tier bands and a marker at
     the year the HCP crossed from rising-star tenure into KOL tenure. Inline SVG."""
     pts = [p for p in (trajectory or []) if isinstance(p.get("score"), (int, float))]
@@ -387,7 +387,7 @@ def render_score_dev_chart(trajectory, thresh_a, thresh_b, width=320, height=120
     # tenure-crossing marker: first year tenure exceeds the rising limit
     marker = ""
     for i, p in enumerate(pts):
-        if p.get("tenure", 0) == RISING_MAX_TENURE_DEFAULT + 1:
+        if p.get("tenure", 0) == rising_max + 1:
             marker = (f'<line x1="{xs[i]:.1f}" y1="{pad_t}" x2="{xs[i]:.1f}" '
                       f'y2="{pad_t + plot_h}" stroke="{PALETTE.get("amber", "#b7791f")}" '
                       f'stroke-width="1" stroke-dasharray="3 2"/>'
@@ -457,7 +457,7 @@ def render_thematic_heatmap(hcps, pca_terms, top_n=20):
     rows = ""
     for h in top:
         tc = _tc(h)
-        badge = f'<span class="pill {h.get("tier","C").lower()}">{h.get("tier","C")}</span>'
+        badge = f'<span class="pill {(h.get("tier") or "none").lower()}">{h.get("tier") or "—"}</span>'
         cells = ""
         for k in keys:
             count = tc.get(k, 0)
@@ -475,7 +475,11 @@ def render_regional(hcps, top_n=20):
     city_data = defaultdict(lambda: {"A": 0, "B": 0, "C": 0})
     for h in hcps:
         city = h.get("city") or "Unknown"
-        city_data[city][h.get("tier", "C")] += 1
+        tier = h.get("tier")
+        if tier in ("A", "B", "C"):
+            city_data[city][tier] += 1
+        else:
+            city_data[city]  # still register the city even if untiered (non-KOL) HCPs live there
     ranked = sorted(city_data.items(), key=lambda x: -(x[1]["A"] + x[1]["B"] + x[1]["C"]))[:top_n]
     if not ranked:
         return ""
@@ -527,18 +531,18 @@ def render_network(coauthor_edges, comention_edges, hcps):
 _SENT_COLOR_KEY = {"positive": "pos", "negative": "neg"}
 
 
-def render_profiles(hcps, all_years, top_n=10, weights=None, tier_thresholds=None):
+def render_profiles(hcps, all_years, top_n=10, weights=None, tier_thresholds=None, rising_max=RISING_MAX_TENURE_DEFAULT):
     weights = weights or DEFAULT_WEIGHTS
     t_a, t_b = tier_thresholds or (float("inf"), float("inf"))
     year_range = f"{all_years[0]}–{all_years[-1]}" if all_years else ""
     cards = ""
     for h in hcps[:top_n]:
-        tier = h.get("tier", "C")
-        badge = f'<span class="pill {tier.lower()}">{tier}</span>'
+        tier = h.get("tier") or "—"
+        badge = f'<span class="pill {(h.get("tier") or "none").lower()}">{tier}</span>'
         rising = ' <span class="pill rise">Rising</span>' if h.get("rising_star") else ""
         stage = f' <span class="pill stage">{_esc(career_stage_label(h))}</span>'
         year_bars = render_year_bars(h.get("total_pub_by_year", {}), h.get("verified_pubmed_years", {}), all_years)
-        dev_chart = render_score_dev_chart(h.get("score_trajectory", []), t_a, t_b)
+        dev_chart = render_score_dev_chart(h.get("score_trajectory", []), t_a, t_b, rising_max=rising_max)
         themes = "".join(f'<span class="tag">{_esc(t["term_en"])}</span>' for t in h.get("theme_labels", []))
         verified_total = h.get("verified_web_count", 0) + h.get("verified_pubmed_count", 0)
         meta = (f'<div class="muted">Composite score {h.get("kol_score",0):.2f} &middot; '
@@ -698,9 +702,10 @@ def _render_sidebar(groups):
     return '<div class="layout">\n' + "\n".join(nav) + "\n" + content + "\n</div>"
 
 
-def build_report_html(data, weights=None, as_of_year_cfg="latest", tier_pcts=None):
+def build_report_html(data, weights=None, as_of_year_cfg="latest", tier_pcts=None, rising_max=None):
     weights = weights or DEFAULT_WEIGHTS
     tier_pcts = tier_pcts or DEFAULT_TIER_PCTS
+    rising_max = RISING_MAX_TENURE_DEFAULT if rising_max is None else rising_max
     all_years = build_year_axis(data)
     top_n = 25
     css = f"""
@@ -851,7 +856,7 @@ def build_report_html(data, weights=None, as_of_year_cfg="latest", tier_pcts=Non
                       f'{render_established_new_callout(top)}'
                       f'{kol_ranking_section}')
     profiles_section = _splice_explainer(
-        render_profiles(top, all_years, top_n=top_n, weights=weights, tier_thresholds=(t_a, t_b)),
+        render_profiles(top, all_years, top_n=top_n, weights=weights, tier_thresholds=(t_a, t_b), rising_max=rising_max),
         "The score-development chart replays each KOL's trajectory against a fixed yardstick -- "
         "today's final pool of KOLs is the ruler for every year shown, so the line reflects the "
         "individual's own growth, not pool churn. Web sources are a constant baseline with no "
@@ -928,13 +933,14 @@ def main():
                "ratio": float(sc.get("weight_ratio", DEFAULT_WEIGHTS["ratio"]))}
     tier_pcts = (float(sc.get("tier_a_percentile", DEFAULT_TIER_PCTS[0])),
                  float(sc.get("tier_b_percentile", DEFAULT_TIER_PCTS[1])))
+    rising_max = int(sc.get("rising_star_max_tenure_years", RISING_MAX_TENURE_DEFAULT))
     as_of_year_cfg = cfg["funnel"].get("as_of_year", "latest") if cfg.has_section("funnel") else "latest"
-    with open(os.path.join(_DIR, "data", "kol_final_latest.json"), encoding="utf-8") as f:
+    with open(os.path.join(_DIR, "data", "kol_final.json"), encoding="utf-8") as f:
         data = json.load(f)
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     html_path = os.path.join(_DIR, "results", f"kol_report_{ts}.html")
     with open(html_path, "w", encoding="utf-8") as f:
-        f.write(build_report_html(data, weights=weights, as_of_year_cfg=as_of_year_cfg, tier_pcts=tier_pcts))
+        f.write(build_report_html(data, weights=weights, as_of_year_cfg=as_of_year_cfg, tier_pcts=tier_pcts, rising_max=rising_max))
     log.info(f"Wrote {html_path}")
     xlsx_path = os.path.join(_DIR, "results", f"kol_report_{ts}.xlsx")
     write_excel(data, xlsx_path)
