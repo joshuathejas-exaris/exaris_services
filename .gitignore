@@ -8,3 +8,6 @@ __pycache__/
 .env
 .mcp.json
 .DS_Store
+
+# Vendored ONNX models (large binaries; provisioned locally, not versioned)
+assets/
