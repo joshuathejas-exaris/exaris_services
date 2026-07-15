@@ -253,3 +253,17 @@ def test_render_year_bars_stacks_total_and_relevant():
 
 def test_render_year_bars_empty_when_no_data():
     assert mod.render_year_bars({}, {}, ["2016", "2017"]) == ""
+
+
+def test_render_score_dev_chart_has_bands_and_line():
+    traj = [{"year": 2016, "score": 0.1, "tier": "C", "tenure": 1},
+            {"year": 2017, "score": 0.4, "tier": "B", "tenure": 2},
+            {"year": 2018, "score": 0.9, "tier": "A", "tenure": 3}]
+    svg = mod.render_score_dev_chart(traj, thresh_a=0.8, thresh_b=0.4)
+    assert svg.startswith("<svg") and "<polyline" in svg
+    assert svg.count("<rect") >= 3           # three tier bands
+    assert "</svg>" in svg
+
+def test_render_score_dev_chart_empty_for_short_series():
+    assert mod.render_score_dev_chart([], 0.8, 0.4) == ""
+    assert mod.render_score_dev_chart([{"year": 2018, "score": 0.5, "tier": "C", "tenure": 1}], 0.8, 0.4) == ""

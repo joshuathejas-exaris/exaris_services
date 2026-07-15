@@ -33,6 +33,8 @@ def _rgba(hex_color, alpha):
 # the run's actual [scoring] weights through to the report renderer.
 DEFAULT_WEIGHTS = {"relevance": 0.60, "reach": 0.25, "ratio": 0.15}
 
+RISING_MAX_TENURE_DEFAULT = 3
+
 
 def as_of_banner(anchor_year, as_of_year_cfg) -> str:
     if not as_of_year_cfg or str(as_of_year_cfg).strip().lower() == "latest":
@@ -312,6 +314,49 @@ def render_year_bars(total_by_year, relevant_by_year, all_years, width=190, heig
     return (f'<svg width="{width}" height="{height}" viewBox="0 0 {width} {height}" '
             f'role="img" aria-label="publications per year, total vs relevant">'
             f'{"".join(rects)}{"".join(labels)}</svg>')
+
+
+def render_score_dev_chart(trajectory, thresh_a, thresh_b, width=320, height=120):
+    """Line chart of composite score over years with A/B/C tier bands and a marker at
+    the year the HCP crossed from rising-star tenure into KOL tenure. Inline SVG."""
+    pts = [p for p in (trajectory or []) if isinstance(p.get("score"), (int, float))]
+    if len(pts) < 2:
+        return ""
+    pad_l, pad_r, pad_t, pad_b = 6, 6, 6, 14
+    plot_w = width - pad_l - pad_r
+    plot_h = height - pad_t - pad_b
+    ta = max(0.0, min(1.0, float(thresh_a))) if thresh_a != float("inf") else 1.0
+    tb = max(0.0, min(1.0, float(thresh_b))) if thresh_b != float("inf") else 0.6
+    def sy(v):  # score 0..1 -> y
+        return pad_t + (1 - max(0.0, min(1.0, v))) * plot_h
+    bands = [  # (top_v, bottom_v, colour)
+        (1.0, ta, PALETTE.get("tierA", "#1f8a5b")),
+        (ta, tb, PALETTE.get("tierB", "#3b5b92")),
+        (tb, 0.0, PALETTE.get("tierC", "#6b7684")),
+    ]
+    rects = "".join(
+        f'<rect x="{pad_l}" y="{sy(top):.1f}" width="{plot_w}" '
+        f'height="{max(0.0, sy(bot) - sy(top)):.1f}" fill="{col}" opacity="0.10"/>'
+        for top, bot, col in bands)
+    n = len(pts)
+    xs = [pad_l + (i / (n - 1)) * plot_w for i in range(n)]
+    poly = " ".join(f"{xs[i]:.1f},{sy(pts[i]['score']):.1f}" for i in range(n))
+    line = f'<polyline points="{poly}" fill="none" stroke="{PALETTE["accent"]}" stroke-width="2"/>'
+    dots = "".join(f'<circle cx="{xs[i]:.1f}" cy="{sy(pts[i]["score"]):.1f}" r="2.2" '
+                   f'fill="{PALETTE["accent"]}"/>' for i in range(n))
+    # tenure-crossing marker: first year tenure exceeds the rising limit
+    marker = ""
+    for i, p in enumerate(pts):
+        if p.get("tenure", 0) == RISING_MAX_TENURE_DEFAULT + 1:
+            marker = (f'<line x1="{xs[i]:.1f}" y1="{pad_t}" x2="{xs[i]:.1f}" '
+                      f'y2="{pad_t + plot_h}" stroke="{PALETTE.get("amber", "#b7791f")}" '
+                      f'stroke-width="1" stroke-dasharray="3 2"/>'
+                      f'<text x="{xs[i]:.1f}" y="{height - 3}" font-size="7" text-anchor="middle" '
+                      f'fill="{PALETTE.get("amber", "#b7791f")}">→ KOL tenure</text>')
+            break
+    return (f'<svg width="{width}" height="{height}" viewBox="0 0 {width} {height}" '
+            f'role="img" aria-label="score development over years">'
+            f'{rects}{marker}{line}{dots}</svg>')
 
 
 def render_rising_stars(hcps, all_years):
