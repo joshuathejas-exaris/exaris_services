@@ -17,14 +17,51 @@ of** an LLM verify pass:
   HCP's verified-relevant PubMed articles (`04_assemble_kols.py::compute_reach`).
 - **Relevance ratio** (`weight_ratio`, default 0.15) — verified-relevant sources ÷ all
   of the HCP's sources, i.e. topical focus (`compute_ratio`); neutral (0) below
-  `min_ratio_denominator` sources so thin profiles aren't penalized or rewarded.
+  `min_ratio_denominator` sources so thin profiles aren't penalized or rewarded. Used
+  **raw** in the composite (not percentile-normalized) — it's already an intrinsic
+  0–1 quantity, so normalizing it would throw away its absolute meaning.
 
-Each factor is normalized across the shortlisted pool (`normalization` = `percentile`
-by default; `minmax`/`zscore` also supported) and combined:
-`kol_score = weight_relevance·norm_relevance + weight_reach·norm_reach + weight_ratio·norm_ratio`
+Relevance and reach are normalized across the shortlisted pool (`normalization` =
+`percentile` by default; `minmax`/`zscore` also supported); ratio is used **raw**.
+Combined:
+`kol_score = weight_relevance·norm_relevance + weight_reach·norm_reach + weight_ratio·ratio_raw`
 (`04_assemble_kols.py::apply_composite`). "Genuinely relevant" is still decided by an
 LLM on both evidence tracks — not by keyword co-occurrence, not by a global
-similarity percentile, and not by a DigiScore.
+similarity percentile, and not by a DigiScore. The composite now ranks **within** a
+bucket — KOL tiers, or ordering among Rising Stars — see below.
+
+### KOL vs Rising Star — mutually exclusive tenure partition
+
+KOL and Rising Star are **mutually exclusive buckets**, assigned in this order after
+Stage 03 verification (`04_assemble_kols.py`):
+
+1. **Rising star** — `relevant_tenure` (years since the HCP's first verified-relevant
+   PubMed year, `compute_tenure`) is `≤ rising_star_max_tenure_years` (config, default
+   3) **and** the HCP has `≥ rising_star_min_pubs` (default 3) verified-relevant
+   PubMed articles (`flag_rising_stars`). Web-only HCPs (no verified PubMed year at
+   all) have undefined tenure and are never rising stars. Rising stars are pulled out
+   first — they can never also be KOLs.
+2. **KOL-eligible** — everyone else (`relevant_tenure > rising_star_max_tenure_years`,
+   or web-only).
+3. A KOL-eligible HCP becomes a **KOL** only if it clears all **four absolute floors**
+   (`passes_kol_floors`), independent of the pool:
+   - Min verified sources (`kol_floor_min_verified`, default 5) —
+     `verified_web_count + verified_pubmed_count ≥ 5`, applies to everyone.
+   - Min relevance ratio (`kol_floor_min_ratio`, default 0.10) — `ratio.ratio ≥ 0.10`;
+     a **neutral** (thin-denominator) ratio fails this floor.
+   - Recent activity (`kol_floor_active_within_yrs`, default 5) — any verified web
+     source (timestamp-free, treated as current) **or** a verified PubMed pub within
+     `active_within_yrs` of the anchor year.
+   - Min co-author reach (`kol_floor_min_coauthors`, default 3) —
+     `reach.distinct_coauthors ≥ 3`, **waived** when the HCP has zero verified PubMed
+     sources, so a purely web-based voice isn't silently dropped.
+   Failing any floor puts the HCP in neither bucket.
+4. **Tiers A/B/C** (`assign_tiers`) are percentile thresholds computed over the **KOL
+   pool only** (`is_kol == True`) — rising stars no longer distort the KOL
+   distribution.
+5. **Breakout badge** — a rising star whose `kol_score` would reach the KOL Tier-A
+   threshold is flagged `breakout`, so an exceptional fast riser is still surfaced
+   even though the tenure partition buckets them as Rising, not KOL.
 
 **Honesty guardrail (do not regress):** these three factors are dimensions of
 *influence on top of verified relevance* — reach and ratio can only reweight HCPs who
@@ -58,11 +95,15 @@ ALL HCPs (~1,176)
    │                       window.
    │  • PubMed candidates: PUBMED_ARTICLE_MAPPING (MERGE_RESULT>1) joined to a
    │                       PubMed CF-flag table, articles within the
-   │                       pubmed_window_years (5) scoring window of the anchor
+   │                       pubmed_window_years (10) scoring window of the anchor
    │                       year, CF-treffer weighted. A separate pub_history_years
-   │                       (20) query fetches a longer display-only publication
+   │                       (10) query fetches a longer display-only publication
    │                       history per HCP for the report's chart (does not affect
-   │                       candidate_score).
+   │                       candidate_score). A third query fetches ALL of the HCP's
+   │                       publications per year over that same window with the
+   │                       CF/topic filter removed (`total_pub_by_year`) — feeds the
+   │                       report's total-vs-relevant chart and the Stage 04
+   │                       score-development reconstruction, not candidate_score.
    │  • Anchor year: `as_of_year` (config, default `latest`) resolves to either
    │                       MAX(YEAR_VAL) in the PubMed CF table or a pinned 4-digit
    │                       year, capping the PubMed scoring window, history window,
@@ -72,7 +113,7 @@ ALL HCPs (~1,176)
    │  candidate_score = web_candidate_count + pubmed_candidate_count
    │  (an upper bound on the final verified relevance factor — safe to rank/cut on)
    ▼
-TOP 75 HCPs  ── everyone else is dropped here, before any LLM spend
+TOP 100 HCPs  ── everyone else is dropped here, before any LLM spend
    │  STAGE 02 — fetch full text, NO LLM, NO vector search
    │  • Web:    LLM_VALIDATION.CONTENT for each candidate WEBSITE_ID
    │  • PubMed: CORE.PUBMED.ARTICLE TITLE + ABSTRACT for each candidate PMID
@@ -84,8 +125,10 @@ STAGE 03 — LLM wiki-build (web + PubMed): ingest → ground → verify → map
    │  still the sole precision arbiter for relevance.
    ▼
 STAGE 04 — assemble: reach + ratio features, normalize, weighted composite
-   │  (relevance + co-author reach + relevance ratio) → kol_score, tiers, rising
-   │  stars, themes, collaboration network.
+   │  (relevance + co-author reach + relevance ratio) → kol_score. Tenure partition
+   │  splits Rising Stars from KOL-eligible HCPs; four absolute floors gate is_kol;
+   │  tiers A/B/C computed over the KOL pool only; breakout badge on exceptional
+   │  rising stars; themes, collaboration network, per-KOL score trajectories.
    ▼
 STAGE 05 — report: TOP 25 KOLs → HTML + Excel
    │
@@ -94,7 +137,7 @@ STAGE 06 (optional) — `06_backtest_compare.py` diffs two `as_of_year` runs
    (e.g. 2021 vs. latest) to see whether yesterday's rising stars became today's KOLs.
 ```
 
-The 75 → 25 buffer absorbs candidates that look strong on cheap counts but collapse
+The 100 → 25 buffer absorbs candidates that look strong on cheap counts but collapse
 under verification (the Humangenetiker/Labormedizin failure mode) — they fall out;
 genuine candidates take their place.
 
@@ -154,16 +197,16 @@ Tests (mock Snowflake/Bedrock):
 
 | File | Purpose |
 |------|---------|
-| `01_fetch_and_shortlist.py` | Cheap-SQL + vector-recall candidate counts (web + PubMed) per HCP: keyword-gated web rows ∪ vector-recall web rows (via `VectorCreator` + `WEBSITES_VERTICAL_EMBEDDINGS_512`, gated by `[hybrid]`), merged by `merge_web_ids`. Resolves the `as_of_year` anchor (`resolve_anchor_year`), builds `candidate_score = web_candidate_count + pubmed_candidate_count`, the 20y display-only pub history, and per-HCP total-source counts (`build_totals_map`) used later as the ratio denominator. Sorts and flags the top `top_n_candidates` (default 75) as `shortlisted`. Emits all HCPs (for report totals). |
-| `02_retrieve_sources.py` | Fetches full text for shortlisted HCPs only: web `CONTENT` from `LLM_VALIDATION`, PubMed `TITLE`+`ABSTRACT` from `CORE.PUBMED.ARTICLE`. Recency-ordered per-HCP cap (`max_sources_per_hcp`) as a cost backstop, not a relevance filter. |
-| `03_wiki_build.py` | Per source: Bedrock ingest (Nova Pro, `[bedrock].ingest_model_id`) extracts claims → deterministic quote-grounding (`verbatim_quote` must be a literal substring of the source text) drops fabrications before any verify call → adversarial verify (Qwen, `[bedrock].verify_model_id`) confirms genuine engagement → maps `mentioned_hcps` to the roster by name. A source counts only if it yields ≥1 grounded + verified claim. Untouched by the hybrid arm and the composite score — still the sole precision arbiter. |
-| `04_assemble_kols.py` | Computes the three factors — relevance (`verified_web_count + verified_pubmed_count`), co-author reach (`compute_reach`, PubMed-only, dedup by ORCID/normalized name, self excluded), relevance ratio (`compute_ratio`, neutral below `min_ratio_denominator`) — normalizes each across the pool (`normalize_values`: `percentile`/`minmax`/`zscore`) and combines them into `kol_score` (`apply_composite`, weights from `[scoring]`). Tiers A/B/C from the `kol_score`-distribution percentile thresholds (`tier_a_percentile`, `tier_b_percentile`); Rising Stars (v1 logic — `new_voice` / `accelerating`) computed on verified-relevant PubMed articles by year only; theme aggregation from verified claims; `top_affiliations` for the network graph; collaboration network from `CORE.PUBMED.AUTHOR` co-authors (incl. non-mapped external authors) + web co-mentions from `mentioned_hcps`. |
-| `05_generate_report.py` | Self-contained HTML (no CDN/fonts/network, inline SVG sparklines) — executive dashboard, KOL ranking (top 25) with a per-KOL click-through score drill-down (`render_score_breakdown`: weight/norm/contribution/evidence per factor), Rising Stars, Thematic heatmap, Regional distribution, an inline-SVG collaboration network graph with real co-author affiliations (`render_network_svg`), per-section "how to read this" explainers (`section_explainer`), an `as_of_year` backtest banner (`as_of_banner`) when the run is capped to a past year, Individual KOL profiles with verbatim quotes. Also writes an Excel export (one row per KOL). |
+| `01_fetch_and_shortlist.py` | Cheap-SQL + vector-recall candidate counts (web + PubMed) per HCP: keyword-gated web rows ∪ vector-recall web rows (via `VectorCreator` + `WEBSITES_VERTICAL_EMBEDDINGS_512`, gated by `[hybrid]`), merged by `merge_web_ids`. Resolves the `as_of_year` anchor (`resolve_anchor_year`), builds `candidate_score = web_candidate_count + pubmed_candidate_count`, the `pub_history_years`-window display-only pub history (default 10y), an all-publications-per-year map with the CF/topic filter removed (`build_total_pub_by_year_query`/`build_total_pub_by_year_map` → `total_pub_by_year`, feeds the report's total-vs-relevant chart and Stage 04's score-development reconstruction), and per-HCP total-source counts (`build_totals_map`) used later as the ratio denominator. Sorts and flags the top `top_n_candidates` (default 100) as `shortlisted`. Emits all HCPs (for report totals). |
+| `02_retrieve_sources.py` | Fetches full text for shortlisted HCPs only: web `CONTENT` from `LLM_VALIDATION`, PubMed `TITLE`+`ABSTRACT` from `CORE.PUBMED.ARTICLE`. Recency-ordered per-HCP cap (`max_sources_per_hcp`) as a cost backstop, not a relevance filter. Threads `total_pub_by_year` (Stage 01's all-pubs-per-year map) through unchanged for later stages. |
+| `03_wiki_build.py` | Per source: Bedrock ingest (Nova Pro, `[bedrock].ingest_model_id`) extracts claims → deterministic quote-grounding (`verbatim_quote` must be a literal substring of the source text) drops fabrications before any verify call → adversarial verify (Qwen, `[bedrock].verify_model_id`) confirms genuine engagement → maps `mentioned_hcps` to the roster by name. A source counts only if it yields ≥1 grounded + verified claim. Untouched by the hybrid arm and the composite score — still the sole precision arbiter. Also builds `verified_pmid_years` (`build_pmid_years`, a per-PMID → year map from verified claims) and threads `total_pub_by_year` through; both are consumed by Stage 04's score-development reconstruction. |
+| `04_assemble_kols.py` | Computes the three factors — relevance (`verified_web_count + verified_pubmed_count`), co-author reach (`compute_reach`, PubMed-only, dedup by ORCID/normalized name, self excluded), relevance ratio (`compute_ratio`, neutral below `min_ratio_denominator`) — normalizes relevance and reach across the pool (`normalize_values`: `percentile`/`minmax`/`zscore`) and combines them with ratio used **raw** into `kol_score` (`apply_composite`, weights from `[scoring]`). `compute_tenure` derives `relevant_tenure`/`first_relevant_year` from `verified_pubmed_years`. `flag_rising_stars` (tenure-based, replaces the v1 `new_voice`/`accelerating` logic) buckets Rising Stars first (`relevant_tenure ≤ rising_star_max_tenure_years` and `≥ rising_star_min_pubs` verified pubs); everyone else is KOL-eligible, and `is_kol` is set only if `passes_kol_floors` clears all four absolute floors (min verified sources, min ratio, recent activity, min co-author reach — waived when the HCP has no PubMed). `assign_tiers` computes A/B/C percentile thresholds (`tier_a_percentile`, `tier_b_percentile`) over the **KOL pool only** and flags `breakout` on rising stars whose score reaches the Tier-A threshold. `build_score_trajectory` replays each reported KOL's composite year-by-year (fixed-yardstick percentiles against the final pool's raw relevance/reach distributions, ratio raw, web held constant) for the report's score-development chart. Theme aggregation from verified claims; `top_affiliations` for the network graph; collaboration network from `CORE.PUBMED.AUTHOR` co-authors (incl. non-mapped external authors) + web co-mentions from `mentioned_hcps`. |
+| `05_generate_report.py` | Self-contained HTML (no CDN/fonts/network, inline SVG charts) — executive dashboard, KOL ranking (top 25) showing total publications + career-stage label (`career_stage_label`: "Emerging (≤3y)" / "Established") with a per-KOL click-through score drill-down (`render_score_breakdown`: weight/norm/contribution/evidence per factor), Rising Stars (with `relevant_tenure` and the `Breakout` badge), an "Established, new to this indication" callout (`established_new_to_topic`/`render_established_new_callout`: long total-publication span but short relevant tenure), Thematic heatmap, Regional distribution, an inline-SVG collaboration network graph with real co-author affiliations (`render_network_svg`), per-section "how to read this" explainers (`section_explainer`), an `as_of_year` backtest banner (`as_of_banner`) when the run is capped to a past year, Individual KOL profiles with a stacked total-vs-relevant per-year bar chart (`render_year_bars`: `total_pub_by_year` vs. `verified_pubmed_years`) and a per-KOL score-development line chart (`render_score_dev_chart`: the `score_trajectory` with A/B/C tier bands and a tenure-crossing marker), plus verbatim quotes. Caveats surfaced as explainer text: fixed-yardstick normalization, web shown as a constant baseline, the chart cannot show pool entry/exit or demotions (see Stage 06's two-run backtest), and it applies today's verification verdicts to historical years. Also writes an Excel export (one row per KOL, incl. `total_publications`, `relevant_tenure`, `is_kol`, `breakout`). |
 | `06_backtest_compare.py` | Diffs two `as_of_year` runs' `kol_final.json` (`compare_runs`): rising-star→KOL promotions, tier moves, brand-new KOLs. CLI: `--earlier`/`--later`; writes `data/backtest_compare.json`. |
 | `vector_creator.py` | `VectorCreator` — embeds text with the GTE multilingual ONNX model (768-dim, L2-normalized), vendored from Service A's `assets/` (no cross-service import). Used by Stage 01's vector-recall arm. |
 | `reranker.py` | `Reranker` — cross-encoder over the mmarco mMiniLM ONNX model, vendored from Service A's `assets/mmarco-reranker`. Not currently called by any stage; `[hybrid].rerank` is off by default (reserved for a future rerank-the-recall-arm step). |
 | `pipeline_common.py` | Shared helpers reused from Service A's pattern: `call_bedrock_json`, `strip_json_fences`, `parse_json_object`, `make_bedrock_client`, `name_matches`, `normalize_name`, `connect_snowflake`, `resolve_tables`. |
-| `config.ini` | All tunable params: `[snowflake]` connection/schema knobs, `[terms]`, `[funnel]` (incl. `as_of_year`, `pub_history_years`), `[hybrid]` (vector arm + rerank flags/thresholds), `[bedrock]`, `[scoring]` (composite weights, normalization, tier/rising-star thresholds), `[report]`. Table FQNs are derived at runtime by `pipeline_common.resolve_tables`, not hand-maintained here. |
+| `config.ini` | All tunable params: `[snowflake]` connection/schema knobs, `[terms]`, `[funnel]` (incl. `as_of_year`; widened windows `pubmed_window_years=10`, `pub_history_years=10`, `top_n_candidates=100` — the last a funnel-starvation mitigation, see below), `[hybrid]` (vector arm + rerank flags/thresholds), `[bedrock]`, `[scoring]` (composite weights, normalization, tier percentiles, `rising_star_max_tenure_years`/`rising_star_min_pubs` for the tenure partition, and the four `kol_floor_*` absolute floors), `[report]`. Table FQNs are derived at runtime by `pipeline_common.resolve_tables`, not hand-maintained here. |
 | `tests/` | Pytest unit tests, one file per stage + `pipeline_common` (mock Snowflake/Bedrock). |
 | `data/` | JSON checkpoints (gitignored). `input.json` seeds the run (`indication`, `client_drug`); not gitignored. |
 | `results/` | HTML + Excel outputs (gitignored). |
@@ -192,7 +235,10 @@ candidates; relevance verification does that job.
 
 > **Not yet live-run-verified** (see spec §9): the cross-database table locations,
 > the `IN_RELATION` numeric range, the PubMed CF-flag column layout, and `IS_OLD`
-> semantics. Confirm these on the first live run.
+> semantics. Confirm these on the first live run. Also a first-live-run validation
+> item: whether `top_n_candidates=100` sufficiently mitigates funnel-starvation of
+> low-volume rising stars (Stage 01 still ranks/cuts on raw `candidate_score`, which
+> favors established, high-volume names) — see tenure-buckets spec §5.
 
 ---
 
@@ -215,19 +261,38 @@ retained unchanged):
 - Spec: `docs/superpowers/specs/2026-07-09-kol-identification-v2-design.md`
 - Plan: `docs/superpowers/plans/2026-07-09-kol-identification-v2.md`
 
-Current scoring model — composite score, hybrid vector-recall arm, `as_of_year`
-backtest:
+Composite score, hybrid vector-recall arm, `as_of_year` backtest (funnel/LLM
+ground-verify pass retained unchanged; superseded on scoring by the tenure-buckets
+spec below):
 - Spec: `docs/superpowers/specs/2026-07-13-kol-scoring-model-design.md`
 - Plan: `docs/superpowers/plans/2026-07-13-kol-scoring-model.md`
+
+Current scoring model — mutually-exclusive KOL/Rising-Star tenure partition,
+absolute KOL floors, tiers over the KOL pool only, per-KOL score-development chart
+(supersedes the scoring-model spec's composite/tiers/rising-star sections only; the
+hybrid vector-recall arm, `as_of_year` backtest, and Stages 01–03's LLM funnel are
+otherwise unchanged):
+- Spec: `docs/superpowers/specs/2026-07-15-kol-tenure-buckets-design.md`
+- Plan: `docs/superpowers/plans/2026-07-15-kol-tenure-buckets.md`
 
 Confirmed decisions: no DigiScore, no raw keyword co-occurrence, no global
 similarity percentile; relevance is decided per source by the LLM ground-then-verify
 pass, unchanged by the composite; the composite's three factors are dimensions of
-influence computed downstream of that verify pass, not a replacement for it; Rising
-Stars are computed only on verified-relevant PubMed output so an off-topic
-publication burst can never crown a rising star; a 4th factor (relevant
-congresses/Tagungen) is designed-for-later but not built this iteration; no PPTX
-deliverable and no Neo4j graph this iteration — the collaboration network is computed
-in-process and rendered inline; no supervised/learned model — there is no
+influence computed downstream of that verify pass, not a replacement for it; KOL and
+Rising Star are mutually exclusive via a pure tenure partition (not a scored blend) —
+a prolific ≤3y-tenure newcomer is bucketed as Rising, not KOL, but flagged `breakout`
+as the accepted trade-off; "KOL" combines relative ranking (percentile tiers over the
+KOL pool only) with four absolute floors so the label has meaning independent of the
+pool; ratio is used raw in the composite (not percentile-normalized) since it's
+already an intrinsic 0–1 quantity; an LLM 1–5 relevance score per source was
+considered and rejected as re-expressing ratio + the existing verify pass while being
+less reproducible; author-position seniority is out of scope (no author-order column
+in `CORE.PUBMED.AUTHOR`); Rising Stars are computed only on verified-relevant PubMed
+output so an off-topic publication burst can never crown a rising star; a 4th factor
+(relevant congresses/Tagungen) is designed-for-later but not built this iteration; no
+PPTX deliverable and no Neo4j graph this iteration — the collaboration network is
+computed in-process and rendered inline; no supervised/learned model — there is no
 ground-truth label for "is a KOL," so empirical validation comes from the
-`as_of_year` PubMed time-machine backtest instead.
+`as_of_year` PubMed time-machine backtest instead; two-run pool entry/exit/demotion
+analysis stays Stage 06's job — the score-development chart is explicitly a
+single-run, backward-looking replay and cannot show it.
