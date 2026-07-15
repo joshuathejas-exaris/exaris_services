@@ -144,3 +144,14 @@ def test_top_affiliations_caps_at_default_n_of_three():
     out = mod.top_affiliations(list(authors_by_pmid.keys()), authors_by_pmid, "Self", "Hcp")
     assert len(out) == 3
     assert out == ["Uni A", "Uni B", "Uni C"]
+
+def test_ratio_is_used_raw_not_normalized():
+    # Two HCPs with equal raw ratios 0.5: percentile/minmax would flatten both to 0
+    # (degenerate), but RAW keeps each ratio contribution at weight*0.5.
+    hcps = [{"verified_web_count": 0, "verified_pubmed_count": 0,
+             "reach": {"distinct_coauthors": 0}, "ratio": {"ratio": 0.5}},
+            {"verified_web_count": 0, "verified_pubmed_count": 0,
+             "reach": {"distinct_coauthors": 0}, "ratio": {"ratio": 0.5}}]
+    out = mod.apply_composite(hcps, {"relevance": 0.6, "reach": 0.25, "ratio": 0.15}, "minmax")
+    assert abs(out[0]["factor_contributions"]["ratio"] - 0.15 * 0.5) < 1e-9
+    assert abs(out[0]["kol_score"] - 0.075) < 1e-9

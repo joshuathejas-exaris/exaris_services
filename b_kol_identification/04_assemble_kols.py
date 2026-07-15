@@ -43,16 +43,17 @@ def normalize_values(values: list, method: str) -> list:
 
 
 def apply_composite(hcps: list, weights: dict, method: str) -> list:
-    """Normalize the three raw factors across the pool and combine them into a
-    weighted composite that OVERWRITES kol_score (replaces the old raw-sum score)."""
+    """Normalize relevance and reach across the pool; use ratio RAW (it is already an
+    intrinsic 0-1 quantity, indication-independent). Combine into the weighted composite
+    that OVERWRITES kol_score."""
     rel = normalize_values([h.get("verified_web_count", 0) + h.get("verified_pubmed_count", 0) for h in hcps], method)
     rch = normalize_values([h.get("reach", {}).get("distinct_coauthors", 0) for h in hcps], method)
-    rat = normalize_values([h.get("ratio", {}).get("ratio", 0.0) for h in hcps], method)
     for i, h in enumerate(hcps):
+        rat_raw = float(h.get("ratio", {}).get("ratio", 0.0))
         c_rel = weights["relevance"] * rel[i]
         c_rch = weights["reach"] * rch[i]
-        c_rat = weights["ratio"] * rat[i]
-        h["norm_relevance"], h["norm_reach"], h["norm_ratio"] = rel[i], rch[i], rat[i]
+        c_rat = weights["ratio"] * rat_raw
+        h["norm_relevance"], h["norm_reach"], h["norm_ratio"] = rel[i], rch[i], rat_raw
         h["factor_contributions"] = {"relevance": c_rel, "reach": c_rch, "ratio": c_rat}
         h["kol_score"] = c_rel + c_rch + c_rat
     return hcps
