@@ -41,8 +41,7 @@ Stage 03 verification (`04_assemble_kols.py`):
    PubMed articles (`flag_rising_stars`). Web-only HCPs (no verified PubMed year at
    all) have undefined tenure and are never rising stars. Rising stars are pulled out
    first — they can never also be KOLs.
-2. **KOL-eligible** — everyone else (`relevant_tenure > rising_star_max_tenure_years`,
-   or web-only).
+2. **KOL-eligible** — everyone else (long relevant tenure, web-only with no publication tenure, or too few verified pubs to qualify as rising).
 3. A KOL-eligible HCP becomes a **KOL** only if it clears all **four absolute floors**
    (`passes_kol_floors`), independent of the pool:
    - Min verified sources (`kol_floor_min_verified`, default 5) —
