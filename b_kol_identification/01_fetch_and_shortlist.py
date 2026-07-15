@@ -159,6 +159,38 @@ GROUP BY m.S_CUSTOMER_ID
 """.strip()
 
 
+def build_total_pub_by_year_query(pubmed_mapping: str, pubmed_article: str,
+                                  history_years: int, anchor_year: int) -> str:
+    """All of the HCP's publications per year (NO CF/topic filter), over the
+    history window ending at the anchor. Feeds the total-vs-relevant chart and
+    the score-development denominator."""
+    cutoff = anchor_year - history_years
+    return f"""
+SELECT m.S_CUSTOMER_ID, a.YEAR_VAL AS YEAR_VAL, COUNT(DISTINCT m.PMID) AS N
+FROM {pubmed_mapping} m
+JOIN {pubmed_article} a ON a.PMID = m.PMID
+WHERE m.MERGE_RESULT > 1
+  AND a.YEAR_VAL >= {cutoff}
+  AND a.YEAR_VAL <= {anchor_year}
+GROUP BY m.S_CUSTOMER_ID, a.YEAR_VAL
+""".strip()
+
+
+def build_total_pub_by_year_map(rows: list) -> dict:
+    def _g(row, k):
+        v = row.get(k)
+        return v if v is not None else row.get(k.lower())
+    out = {}
+    for r in rows:
+        cid = str(_g(r, "S_CUSTOMER_ID") or "")
+        yr = str(_g(r, "YEAR_VAL") or "")
+        n = int(_g(r, "N") or 0)
+        if not cid or not yr:
+            continue
+        out.setdefault(cid, {})[yr] = n
+    return out
+
+
 def build_totals_map(web_total_rows: list, pubmed_total_rows: list) -> dict:
     def _g(row, k):
         v = row.get(k)
@@ -330,6 +362,11 @@ def main():
                 cf_cols, int(fn["pub_history_years"]), anchor_year))
     history_rows = cur.fetchall()
 
+    log.info("Q3c: pubmed total-per-year (all pubs, no CF filter)...")
+    cur.execute(build_total_pub_by_year_query(tb["pubmed_mapping"], tb["pubmed_article"],
+                int(fn["pub_history_years"]), anchor_year))
+    total_year_rows = cur.fetchall()
+
     log.info("Q4: HCP metadata...")
     cur.execute(build_hcp_meta_query(tb["customer_source"], tb["rating_result_final"]))
     meta_map = {str(r["S_CUSTOMER_ID"]): normalise_meta_row(r) for r in cur.fetchall()}
@@ -349,6 +386,9 @@ def main():
         t = totals_map.get(str(h.get("s_customer_id", "")), {})
         h["total_web_sources"] = t.get("total_web", 0)
         h["total_pubmed_sources"] = t.get("total_pubmed", 0)
+    total_year_map = build_total_pub_by_year_map(total_year_rows)
+    for h in hcps:
+        h["total_pub_by_year"] = total_year_map.get(str(h.get("s_customer_id", "")), {})
     hcps = shortlist(hcps, int(fn["top_n_candidates"]))
     n_short = sum(h["shortlisted"] for h in hcps)
     log.info(f"{len(hcps)} candidate HCPs; {n_short} shortlisted")

@@ -172,3 +172,18 @@ def test_build_totals_map_merges(fetch_mod):
     out = fetch_mod.build_totals_map(web, pub)
     assert out["1"] == {"total_web": 10, "total_pubmed": 4}
     assert out["2"] == {"total_web": 0, "total_pubmed": 2}
+
+def test_total_pub_by_year_query_has_no_cf_filter_and_windows():
+    sql = mod.build_total_pub_by_year_query("MAP", "ART", history_years=10, anchor_year=2018)
+    assert "MAP" in sql and "ART" in sql
+    assert "GROUP BY" in sql.upper() and "YEAR_VAL" in sql.upper()
+    assert "2008" in sql and "2018" in sql          # anchor-10 .. anchor
+    assert "cf." not in sql.lower()                  # CF filter removed (all pubs)
+
+def test_total_pub_by_year_map_groups_counts_by_year():
+    rows = [{"S_CUSTOMER_ID": "1", "YEAR_VAL": 2017, "N": 3},
+            {"S_CUSTOMER_ID": "1", "YEAR_VAL": 2018, "N": 2},
+            {"S_CUSTOMER_ID": "2", "YEAR_VAL": 2018, "N": 5}]
+    m = mod.build_total_pub_by_year_map(rows)
+    assert m["1"] == {"2017": 3, "2018": 2}
+    assert m["2"] == {"2018": 5}
