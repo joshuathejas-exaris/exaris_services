@@ -249,6 +249,51 @@ def compute_tenure(verified_pubmed_years: dict, anchor_year: int) -> dict:
     return {"relevant_tenure": int(anchor_year) - first + 1, "first_relevant_year": first}
 
 
+def pctile_in(sorted_ref: list, value: float) -> float:
+    """Fixed-yardstick percentile of `value` against a precomputed sorted reference
+    distribution (the final pool's raw factor values). Mirrors normalize_values'
+    percentile core: (strictly-less + half the ties) / (n-1), clamped to [0,1]."""
+    n = len(sorted_ref)
+    if n < 2:
+        return 0.0
+    less = sum(1 for x in sorted_ref if x < value)
+    equal = sum(1 for x in sorted_ref if x == value)
+    p = (less + 0.5 * max(equal - 1, 0)) / (n - 1)
+    return max(0.0, min(1.0, p))
+
+
+def build_score_trajectory(hcp: dict, anchor_year: int, span: int, window_years: int,
+                           ref_relevance: list, ref_reach: list, weights: dict,
+                           thresh_a: float, thresh_b: float, authors_by_pmid: dict) -> list:
+    """Replay the composite as of each year in [anchor-span+1 .. anchor], holding web
+    constant (no timestamps), against a FIXED reference distribution so the line shows
+    the individual's growth, not pool churn."""
+    web_v = hcp.get("verified_web_count", 0)
+    web_tot = hcp.get("total_web_sources", 0)
+    pmid_years = {str(k): int(v) for k, v in hcp.get("verified_pmid_years", {}).items()}
+    tot_by_year = {int(y): int(c) for y, c in hcp.get("total_pub_by_year", {}).items() if str(y).isdigit()}
+    ref_rel = sorted(ref_relevance); ref_rch = sorted(ref_reach)
+    years_present = [int(y) for y in hcp.get("verified_pubmed_years", {}).keys() if str(y).isdigit()]
+    first_year = min(years_present) if years_present else None
+
+    out = []
+    for y in range(int(anchor_year) - int(span) + 1, int(anchor_year) + 1):
+        in_window = [p for p, yr in pmid_years.items() if y - window_years <= yr <= y]
+        relevance = web_v + len(in_window)
+        reach = compute_reach(in_window, authors_by_pmid, "", "")["distinct_coauthors"]
+        cum_pub = sum(c for yr, c in tot_by_year.items() if yr <= y)
+        denom = web_tot + cum_pub
+        ratio = min(relevance / denom, 1.0) if denom > 0 else 0.0
+        score = (weights["relevance"] * pctile_in(ref_rel, relevance)
+                 + weights["reach"] * pctile_in(ref_rch, reach)
+                 + weights["ratio"] * ratio)
+        tier = "A" if score >= thresh_a else "B" if score >= thresh_b else "C"
+        tenure = (y - first_year + 1) if (first_year is not None and y >= first_year) else 0
+        out.append({"year": y, "relevance": relevance, "reach": reach, "ratio": round(ratio, 4),
+                    "tenure": tenure, "score": round(score, 4), "tier": tier})
+    return out
+
+
 def passes_kol_floors(hcp: dict, anchor_year: int, min_verified: int, min_ratio: float,
                       active_within_yrs: int, min_coauthors: int) -> bool:
     """Absolute engagement floors that give 'KOL' meaning independent of the pool.

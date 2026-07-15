@@ -236,3 +236,35 @@ def test_tiers_computed_over_kol_pool_only_and_breakout():
     assert out["r1"]["tier"] is None            # rising stars are not tiered
     assert out["r1"]["breakout"] is True        # would have reached tier-A level
     assert out["r2"]["breakout"] is False
+
+
+def test_pctile_in_ranks_within_fixed_reference():
+    ref = [0.0, 1.0, 2.0, 3.0]        # n=4
+    assert mod.pctile_in(ref, -5.0) == 0.0
+    assert mod.pctile_in(ref, 5.0) == 1.0
+    assert abs(mod.pctile_in(ref, 1.0) - (1 / 3)) < 1e-9   # 1 strictly-less of 3 gaps
+
+def test_pctile_in_degenerate_reference_is_zero():
+    assert mod.pctile_in([5.0], 5.0) == 0.0
+
+def test_score_trajectory_grows_and_marks_tenure():
+    hcp = {
+        "verified_web_count": 0, "total_web_sources": 0,
+        "verified_pubmed_count": 3,
+        "verified_pmid_years": {"p1": 2016, "p2": 2017, "p3": 2018},
+        "verified_pubmed_years": {"2016": 1, "2017": 1, "2018": 1},
+        "total_pub_by_year": {"2016": 1, "2017": 1, "2018": 1},
+    }
+    authors_by_pmid = {"p1": [{"ORCID": "a", "FIRSTNAME": "Co", "LASTNAME": "One", "AFFILIATION": "U"}],
+                       "p2": [{"ORCID": "b", "FIRSTNAME": "Co", "LASTNAME": "Two", "AFFILIATION": "U"}],
+                       "p3": [{"ORCID": "c", "FIRSTNAME": "Co", "LASTNAME": "Three", "AFFILIATION": "U"}]}
+    ref_rel = [0.0, 1.0, 2.0, 3.0]; ref_rch = [0.0, 1.0, 2.0, 3.0]
+    traj = mod.build_score_trajectory(hcp, anchor_year=2018, span=3, window_years=10,
+                ref_relevance=ref_rel, ref_reach=ref_rch,
+                weights={"relevance": 0.6, "reach": 0.25, "ratio": 0.15},
+                thresh_a=0.8, thresh_b=0.4, authors_by_pmid=authors_by_pmid)
+    assert [p["year"] for p in traj] == [2016, 2017, 2018]
+    assert traj[0]["relevance"] == 1 and traj[2]["relevance"] == 3      # windowed cumulative
+    assert traj[0]["reach"] == 1 and traj[2]["reach"] == 3              # co-authors accrue
+    assert traj[2]["score"] >= traj[0]["score"]                        # climbs
+    assert traj[0]["tenure"] == 1 and traj[2]["tenure"] == 3
