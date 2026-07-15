@@ -70,16 +70,16 @@ def assign_tiers(hcps: list, tier_a_pct: float, tier_b_pct: float) -> list:
                            else "B" if h["kol_score"] >= thresh_b else "C")} for h in hcps]
 
 
-def flag_rising_stars(hcps: list, min_pubs: int, growth: float) -> list:
+def flag_rising_stars(hcps: list, min_pubs: int, max_tenure_years: int, anchor_year: int) -> list:
+    """Rising star = short relevant-publication tenure AND genuinely active.
+    Tenure-based partition: a rising star is, by construction, not yet established."""
     out = []
     for h in hcps:
-        years = {int(y): int(c) for y, c in h.get("verified_pubmed_years", {}).items() if str(y).isdigit()}
-        cur = max(years) if years else datetime.now().year
-        recent = sum(c for y, c in years.items() if y >= cur - 1)
-        prior = sum(c for y, c in years.items() if y < cur - 1)
-        new_voice = recent >= min_pubs and prior == 0
-        accel = (recent / max(prior, 1)) >= growth and recent >= min_pubs
-        out.append({**h, "rising_star": bool(new_voice or accel)})
+        years = h.get("verified_pubmed_years", {})
+        ten = compute_tenure(years, anchor_year)["relevant_tenure"]
+        total = sum(int(c) for c in years.values())
+        rising = (ten is not None and ten <= max_tenure_years and total >= min_pubs)
+        out.append({**h, "rising_star": bool(rising)})
     return out
 
 

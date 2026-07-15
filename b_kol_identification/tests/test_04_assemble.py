@@ -33,9 +33,10 @@ def test_apply_composite_weights_and_contributions():
     assert abs(out[1]["kol_score"] - 0.4) < 1e-9
     assert "factor_contributions" in out[0]
 
-def test_rising_star_new_voice_on_verified_years():
-    hcps = [{"verified_pubmed_years":{"2024":4,"2025":0}}]
-    out = mod.flag_rising_stars(hcps, min_pubs=3, growth=3.0)
+def test_rising_star_short_tenure_and_active():
+    # first verified year 2016, anchor 2018 -> tenure 3 (<=3), 5 pubs (>=3) -> rising
+    hcps = [{"verified_pubmed_years": {"2016": 2, "2018": 3}}]
+    out = mod.flag_rising_stars(hcps, min_pubs=3, max_tenure_years=3, anchor_year=2018)
     assert out[0]["rising_star"] is True
 
 def test_aggregate_themes_counts_from_claims():
@@ -87,9 +88,21 @@ def test_coauthor_edges_no_double_count_for_internal_pair():
     internal = [e for e in edges if not e["b_external"]]
     assert len(internal) == 1 and internal[0]["shared_pmids"] == 1
 
-def test_rising_star_not_flagged_for_established_author():
-    hcps = [{"verified_pubmed_years": {"2023": 1, "2025": 3}}]  # max 2025; a prior 2023 pub
-    out = mod.flag_rising_stars(hcps, min_pubs=3, growth=1000.0)
+def test_not_rising_when_tenure_exceeds_limit():
+    # first year 2010, anchor 2018 -> tenure 9 (>3) -> established, not rising
+    hcps = [{"verified_pubmed_years": {"2010": 1, "2018": 4}}]
+    out = mod.flag_rising_stars(hcps, min_pubs=3, max_tenure_years=3, anchor_year=2018)
+    assert out[0]["rising_star"] is False
+
+def test_not_rising_when_inactive_one_off():
+    # tenure 1 but only 1 pub (< min_pubs) -> a one-off, not a rising star
+    hcps = [{"verified_pubmed_years": {"2018": 1}}]
+    out = mod.flag_rising_stars(hcps, min_pubs=3, max_tenure_years=3, anchor_year=2018)
+    assert out[0]["rising_star"] is False
+
+def test_not_rising_when_no_pubmed_years():
+    hcps = [{"verified_pubmed_years": {}}]
+    out = mod.flag_rising_stars(hcps, min_pubs=3, max_tenure_years=3, anchor_year=2018)
     assert out[0]["rising_star"] is False
 
 def test_compute_reach_dedupes_by_orcid_and_excludes_self():
