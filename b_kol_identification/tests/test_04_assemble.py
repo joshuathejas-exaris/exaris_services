@@ -155,3 +155,11 @@ def test_ratio_is_used_raw_not_normalized():
     out = mod.apply_composite(hcps, {"relevance": 0.6, "reach": 0.25, "ratio": 0.15}, "minmax")
     assert abs(out[0]["factor_contributions"]["ratio"] - 0.15 * 0.5) < 1e-9
     assert abs(out[0]["kol_score"] - 0.075) < 1e-9
+
+def test_compute_tenure_span_from_first_verified_year():
+    t = mod.compute_tenure({"2016": 2, "2018": 3}, anchor_year=2018)
+    assert t["first_relevant_year"] == 2016 and t["relevant_tenure"] == 3   # 2018-2016+1
+
+def test_compute_tenure_none_when_no_pubmed_years():
+    t = mod.compute_tenure({}, anchor_year=2018)
+    assert t["relevant_tenure"] is None and t["first_relevant_year"] is None

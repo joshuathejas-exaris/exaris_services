@@ -227,6 +227,16 @@ def compute_ratio(verified_web: int, verified_pubmed: int,
     return {"ratio": min(numerator / denominator, 1.0), "denominator": denominator, "neutral": False}
 
 
+def compute_tenure(verified_pubmed_years: dict, anchor_year: int) -> dict:
+    """Relevant-publication career stage. tenure = anchor - first_verified_year + 1.
+    None when the HCP has no verified PubMed years (web-only voice)."""
+    years = [int(y) for y in verified_pubmed_years.keys() if str(y).isdigit()]
+    if not years:
+        return {"relevant_tenure": None, "first_relevant_year": None}
+    first = min(years)
+    return {"relevant_tenure": int(anchor_year) - first + 1, "first_relevant_year": first}
+
+
 def build_comention_edges(hcps: list) -> list:
     edges = []
     for h in hcps:
