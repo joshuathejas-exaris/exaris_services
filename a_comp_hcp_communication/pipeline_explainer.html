@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Service 1.2 — Pipeline Explainer</title>
+<style>
+  :root{
+    --bg:#f6f7f9; --card:#fff; --ink:#1a2027; --muted:#5b6672; --line:#e3e7ec;
+    --accent:#2b5c9b; --accent-bg:#eaf1fa; --green:#1f7a54; --green-bg:#e9f4ee;
+    --red:#b4432f; --red-bg:#fbeeeb; --warn:#8a6d1a; --warn-bg:#fdf6e3;
+    --s1:#2b5c9b; --s2:#3d7ab8; --s3:#1f7a54; --s4:#8a5cc4; --s5:#c47a1f;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:15px/1.58 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;}
+  .wrap{max-width:1000px;margin:0 auto;padding:32px 24px 72px;}
+  header{border-bottom:3px solid var(--ink);padding-bottom:16px;margin-bottom:8px;}
+  header .kicker{font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);font-weight:700;}
+  h1{font-size:27px;margin:6px 0 6px;letter-spacing:-.01em;}
+  header .ctx{color:var(--muted);font-size:14.5px;max-width:80ch;}
+  h2{font-size:19px;margin:40px 0 12px;padding-top:8px;border-top:1px solid var(--line);}
+  h2 .n{color:var(--accent);}
+  h3{font-size:15px;margin:18px 0 8px;}
+  p{margin:9px 0;}
+  code{background:#eef1f4;padding:1px 5px;border-radius:4px;font-size:12.5px;
+    font-family:"SF Mono",Menlo,Consolas,monospace;}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:18px 20px;margin:14px 0;}
+  .lead{background:linear-gradient(180deg,#fff,#fbfcfd);border-left:4px solid var(--accent);}
+  .lead h3{margin-top:0;color:var(--accent);}
+  ul{margin:8px 0;padding-left:20px;} li{margin:5px 0;}
+  .why{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
+  @media(max-width:720px){.why{grid-template-columns:1fr}}
+  .fail{border:1px solid #f0d7d0;background:var(--red-bg);border-radius:9px;padding:14px 16px;}
+  .fail b{color:var(--red);}
+  .tracks{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
+  @media(max-width:720px){.tracks{grid-template-columns:1fr}}
+  .track{border:1px solid var(--line);border-radius:9px;padding:14px 16px;background:#fff;}
+  .track.a{border-top:4px solid var(--green);}
+  .track.b{border-top:4px solid var(--s5);}
+  .track h3{margin-top:0;}
+  /* flow rail */
+  .rail{margin:18px 0 6px;}
+  .stage{display:flex;gap:16px;margin:0;position:relative;padding-bottom:10px;}
+  .spine{flex:0 0 46px;display:flex;flex-direction:column;align-items:center;}
+  .badge{width:38px;height:38px;border-radius:50%;color:#fff;font-weight:700;font-size:16px;
+    display:flex;align-items:center;justify-content:center;box-shadow:0 1px 3px rgba(0,0,0,.15);}
+  .line{flex:1;width:2px;background:var(--line);margin:4px 0;}
+  .stage:last-child .line{display:none;}
+  .body{flex:1;background:#fff;border:1px solid var(--line);border-radius:10px;padding:14px 18px;margin-bottom:14px;}
+  .body h3{margin:0 0 2px;font-size:16px;}
+  .body .file{font-size:12px;color:var(--muted);font-family:"SF Mono",Menlo,monospace;}
+  .body .out{display:inline-block;margin-top:4px;font-size:12px;background:var(--accent-bg);color:var(--accent);
+    padding:2px 8px;border-radius:6px;font-weight:600;}
+  .kv{margin-top:8px;font-size:13.5px;}
+  .kv b{color:var(--ink);}
+  .meta{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;}
+  .chip{font-size:11.5px;background:#eef1f4;border:1px solid var(--line);border-radius:6px;padding:2px 8px;color:#3a4650;}
+  .chip.tbl{background:var(--green-bg);border-color:#cfe6da;color:var(--green);}
+  .chip.llm{background:#f3ecfb;border-color:#e0d0f2;color:var(--s4);}
+  table{border-collapse:collapse;width:100%;font-size:13px;margin:10px 0;}
+  th,td{border:1px solid var(--line);padding:7px 10px;text-align:left;vertical-align:top;}
+  th{background:#f0f3f6;font-weight:700;}
+  td.mono,th.mono{font-family:"SF Mono",Menlo,monospace;font-size:12px;}
+  .warn{background:var(--warn-bg);border-left:4px solid var(--warn);border-radius:8px;padding:12px 16px;margin:14px 0;font-size:13.5px;}
+  .warn b{color:var(--warn);}
+  .final{background:var(--green-bg);border:1px solid #cfe6da;border-radius:10px;padding:16px 20px;}
+  .final h3{margin-top:0;color:var(--green);}
+  .muted{color:var(--muted);}
+  footer{margin-top:40px;color:var(--muted);font-size:12px;border-top:1px solid var(--line);padding-top:14px;}
+  @media print{body{background:#fff}.card,.body,.track,.fail{break-inside:avoid}h2{break-after:avoid}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <div class="kicker">Service 1.2 · Competitive HCP Communication Monitoring</div>
+  <h1>How the pipeline works</h1>
+  <div class="ctx">A step-by-step walkthrough for colleagues: what each stage does, which Snowflake tables it reads, and how we get from a client drug to a traceable report of what doctors actually say about competitor drugs.</div>
+</header>
+
+<div class="card lead">
+  <h3>In one sentence</h3>
+  <p>Given a client drug (e.g. <b>Ozempic</b>), the pipeline finds its <b>competitors</b>, pulls real source documents where doctors discuss them, and extracts <b>what each doctor actually said</b> — attributing a statement to a doctor <b>only when the source text proves it</b> — then produces an HTML + Excel report.</p>
+</div>
+
+<h2><span class="n">Why</span> it's built this way</h2>
+<p>The whole design exists to kill two failure modes. Everything downstream — the grounding, the double-check — is there to prevent these:</p>
+<div class="why">
+  <div class="fail">
+    <b>1 · False attribution</b>
+    <p style="margin-bottom:0">A doctor is named on a page, the drug is mentioned somewhere else on the same page, and we wrongly credit the doctor with an opinion they never expressed.</p>
+  </div>
+  <div class="fail">
+    <b>2 · Co-occurrence ≠ opinion</b>
+    <p style="margin-bottom:0">A keyword matching in a document is <em>not</em> proof of a view. Being in the same text as "Mounjaro" doesn't mean the doctor said anything about it.</p>
+  </div>
+</div>
+<p>So <b>every claim is grounded twice</b>: (a) the verbatim quote must literally appear in the source text (a deterministic string check), and (b) an independent LLM "verify" pass confirms the named doctor really expresses that view about that drug. Anything that fails either check is dropped.</p>
+
+<h2><span class="n">Two</span> tracks &amp; two doctor types</h2>
+<p>Every competitor is processed on one of two tracks, decided back in Stage 01:</p>
+<div class="tracks">
+  <div class="track a">
+    <h3>Track A — CF-derived <span class="muted">(source = "cf")</span></h3>
+    <p style="margin-bottom:0">The competitor came from our content-frame terms. The <code>LLM_VALIDATION</code> table is meaningful here, so we can apply the full gate and get <b>mapped HCPs</b> (real records with an <code>S_CUSTOMER_ID</code>).</p>
+  </div>
+  <div class="track b">
+    <h3>Track B — LLM-knowledge <span class="muted">(source = "llm")</span></h3>
+    <p style="margin-bottom:0">The competitor came from the model's own knowledge (CF gave too few). No <code>LLM_VALIDATION</code> rows — we do a whole-corpus vector search only, and every doctor found is <b>unmapped</b> by construction.</p>
+  </div>
+</div>
+<p style="font-size:13.5px" class="muted"><b>Mapped vs. unmapped:</b> a <em>mapped</em> doctor resolves to a customer record (<code>S_CUSTOMER_ID</code>); an <em>unmapped</em> doctor is genuinely quoted in a source but has no matching record. Both are reported — each clearly flagged.</p>
+
+<h2><span class="n">The</span> five stages</h2>
+<p>Each stage writes a JSON checkpoint and is <b>resume-safe</b> (it skips if its output already exists, unless you pass <code>--force</code>). They run in order:</p>
+
+<div class="rail">
+
+  <!-- Stage 01 -->
+  <div class="stage">
+    <div class="spine"><div class="badge" style="background:var(--s1)">01</div><div class="line"></div></div>
+    <div class="body">
+      <h3>Identify competitors</h3>
+      <div class="file">01_identify_competitors.py &nbsp;·&nbsp; python 01… --client-drug "Ozempic" --from-snowflake</div>
+      <div class="kv">
+        <b>What happens:</b> Reads content-frame (CF) terms for the indication. Row 0 is treated as the indication; the rest are candidate keywords. An LLM maps the client drug + CF terms to concrete <b>competitor drugs</b> (brand + generic name). If fewer than 2 competitors come from CF terms, the LLM adds more from its own knowledge. Each competitor is tagged <code>source: "cf"</code> (→ Track A) or <code>"llm"</code> (→ Track B). It also rejects a drug name that accidentally leaked in as the indication.
+      </div>
+      <div class="meta">
+        <span class="chip tbl">CONTENT_FRAME_SPEC → DE_TERM_1, EN_TERM_1</span>
+        <span class="chip llm">LLM: Qwen3-235B (Bedrock)</span>
+      </div>
+      <div><span class="out">→ data/competitors.json</span></div>
+    </div>
+  </div>
+
+  <!-- Stage 02 -->
+  <div class="stage">
+    <div class="spine"><div class="badge" style="background:var(--s2)">02</div><div class="line"></div></div>
+    <div class="body">
+      <h3>Retrieve sources</h3>
+      <div class="file">02_retrieve_sources.py</div>
+      <div class="kv">
+        <b>What happens (the 2-layer retrieval):</b>
+        <ul style="margin-top:4px">
+          <li><b>Layer 1 — the gate (Track A only):</b> query <code>LLM_VALIDATION</code> for rows where <code>IS_DOCTOR = 1</code> AND <code>IS_OLD = 0</code> AND <code>NEAR_BY = 1</code> AND the brand/generic appears in <code>COL_KEYWORDS_ORIG / COL_KEYWORDS_EN</code>. (<code>IN_RELATION</code> exists but is intentionally <em>not</em> gated — it's non-indicative.) This yields the relevant <code>WEBSITE_ID</code>s and the <b>mapped-HCP roster</b>.</li>
+          <li><b>Layer 2 — vector search:</b> embed the query strings (brand, generic, "brand + indication") locally and run <code>VECTOR_COSINE_SIMILARITY</code> against pre-computed 512-token chunk embeddings — restricted to the Layer-1 websites (Track A) or the whole corpus incl. PubMed (Track B). Keep the best <code>100</code> chunks/drug at similarity <code>≥ 0.65</code>, capped at <code>40</code> sources/competitor.</li>
+        </ul>
+        The chunks decide <em>which documents</em> matter; the <b>full document CONTENT</b> of those websites becomes the raw text for the wiki (truncated to 24k chars).
+      </div>
+      <div class="meta">
+        <span class="chip tbl">LLM_VALIDATION</span>
+        <span class="chip tbl">WEBSITES_VERTICAL_EMBEDDINGS_512</span>
+        <span class="chip tbl">WEBSITES_EMBEDDINGS_512</span>
+        <span class="chip tbl">PUBMED_EMBEDDINGS_512</span>
+        <span class="chip tbl">CUSTOMER_SOURCE</span>
+        <span class="chip">local ONNX embedder (GTE multilingual, 768-dim)</span>
+      </div>
+      <div><span class="out">→ data/raw_sources.json</span></div>
+    </div>
+  </div>
+
+  <!-- Stage 03 -->
+  <div class="stage">
+    <div class="spine"><div class="badge" style="background:var(--s3)">03</div><div class="line"></div></div>
+    <div class="body">
+      <h3>Build the LLM-wiki (this is where grounding happens)</h3>
+      <div class="file">03_wiki_build.py</div>
+      <div class="kv">
+        <b>What happens, per source document:</b>
+        <ul style="margin-top:4px">
+          <li><b>Ingest</b> (LLM) — extract only concrete statements a <em>named doctor</em> makes <em>about the specific drug</em>: (speaker, verbatim quote, paraphrased statement, sentiment, confidence). Financial-disclosure / conflict-of-interest text is excluded.</li>
+          <li><b>Quote-grounding</b> (deterministic) — check the verbatim quote literally appears in the source text. If not → dropped (<code>grounding</code>). This runs <em>before</em> spending an LLM verify call.</li>
+          <li><b>Verify</b> (LLM, adversarial) — a second, independent pass returns true only if the quote is present AND the document shows <em>this</em> speaker expressing <em>this</em> view. Fail → dropped (<code>verify</code>).</li>
+          <li><b>Speaker mapping</b> — match the speaker name to the mapped-HCP roster from Stage 02 → attach <code>S_CUSTOMER_ID</code>, or flag "not mapped".</li>
+        </ul>
+        Writes a browsable <code>wiki/&lt;timestamp&gt;/&lt;competitor&gt;/</code> tree (<code>raw/</code> source pages, <code>wiki/</code> one page per doctor, <code>schema/</code> the graph + a <code>drops.json</code> listing everything discarded and why). Sentiment (positive / negative / ambivalent / neutral) is an attribute of each surviving claim.
+      </div>
+      <div class="meta">
+        <span class="chip llm">Ingest: Nova Pro (Bedrock)</span>
+        <span class="chip llm">Verify: Qwen3-235B (Bedrock)</span>
+        <span class="chip">no Snowflake — works on Stage-02 output</span>
+      </div>
+      <div><span class="out">→ data/knowledge_graph.json &nbsp;(+ wiki/&lt;ts&gt;/ tree)</span></div>
+    </div>
+  </div>
+
+  <!-- Stage 04 -->
+  <div class="stage">
+    <div class="spine"><div class="badge" style="background:var(--s4)">04</div><div class="line"></div></div>
+    <div class="body">
+      <h3>Synthesize</h3>
+      <div class="file">04_synthesize.py</div>
+      <div class="kv">
+        <b>What happens:</b> takes the already-verified claims (no re-judging) and aggregates them. Per competitor it counts a <b>sentiment split</b> across mapped / unmapped / all doctors, then an LLM writes a short <b>market-view</b> narrative (2–4 sentences, grounded strictly in the listed statements). One overall executive summary is written across all competitors.
+      </div>
+      <div class="meta">
+        <span class="chip llm">LLM: Qwen3-235B (Bedrock)</span>
+        <span class="chip">counts are plain tallies — no weighting/thresholds</span>
+      </div>
+      <div><span class="out">→ data/synthesis.json</span></div>
+    </div>
+  </div>
+
+  <!-- Stage 05 -->
+  <div class="stage">
+    <div class="spine"><div class="badge" style="background:var(--s5)">05</div><div class="line"></div></div>
+    <div class="body">
+      <h3>Generate the report</h3>
+      <div class="file">05_generate_report.py</div>
+      <div class="kv">
+        <b>What happens:</b> renders the final deliverables. The primary report is tabbed — overview, per-competitor, doctors-weighing-in, most-active doctors, and a methodology section — showing ~15 examples per section with an "N more" roll-up. Every claim links back to its source. Conflict-of-interest disclosures are filtered out of both HTML and Excel.
+      </div>
+      <div class="meta"><span class="chip">no LLM — pure rendering</span></div>
+      <div><span class="out">→ results/report_&lt;ts&gt;.html · guide_&lt;ts&gt;.html · technical_&lt;ts&gt;.html · report_&lt;ts&gt;.xlsx</span></div>
+    </div>
+  </div>
+
+</div>
+
+<h2><span class="n">The</span> tables, at a glance</h2>
+<p>All in Snowflake — database <code>CUST_NOVO</code>. <code>schema_final = ADIPOS_AMBU_FINAL</code>, <code>schema_tmp = ADIPOS_AMBU_V1</code>.</p>
+<table>
+  <thead><tr><th class="mono">Table</th><th>Schema</th><th>Used in</th><th>What it gives us</th></tr></thead>
+  <tbody>
+    <tr><td class="mono">CONTENT_FRAME_SPEC</td><td>tmp</td><td>01</td><td>Indication + candidate keyword terms (<code>DE_TERM_1</code>, <code>EN_TERM_1</code>)</td></tr>
+    <tr><td class="mono">LLM_VALIDATION</td><td>final</td><td>02</td><td><b>The gate.</b> Doctor/freshness/proximity flags + keywords + full <code>CONTENT</code> + <code>WEBSITE_ID</code>, <code>S_CUSTOMER_ID</code></td></tr>
+    <tr><td class="mono">WEBSITES_VERTICAL_EMBEDDINGS_512</td><td>final</td><td>02</td><td>Vertical (HCP) website chunks + embeddings for vector search</td></tr>
+    <tr><td class="mono">WEBSITES_EMBEDDINGS_512</td><td>final</td><td>02</td><td>Public website chunks + embeddings</td></tr>
+    <tr><td class="mono">PUBMED_EMBEDDINGS_512</td><td>final</td><td>02</td><td>PubMed chunks + embeddings (mainly Track B)</td></tr>
+    <tr><td class="mono">WEBSITES_VERTICAL_CONTENT_FRAME_SINGLE_TBL</td><td>final</td><td>02</td><td>Maps website → HCP/URL (vertical)</td></tr>
+    <tr><td class="mono">WEBSITES_CONTENT_FRAME_SINGLE</td><td>final</td><td>02</td><td>Maps website → domain (public)</td></tr>
+    <tr><td class="mono">CUSTOMER_SOURCE</td><td>tmp</td><td>02</td><td>HCP master record — name, city (for the mapped roster)</td></tr>
+  </tbody>
+</table>
+<p class="muted" style="font-size:13px">Stages 03–05 don't touch Snowflake; they work purely on the JSON checkpoints from Stage 02.</p>
+
+<div class="warn">
+  <b>Note for the first live run:</b> Stage 02 assembles each source's full text from <code>LLM_VALIDATION.CONTENT</code>. If that ever turns out to be a fragment rather than the whole document, switch <code>[wiki] content_source = chunk_concat</code> in <code>config.ini</code> to reconstruct text by concatenating the <code>*_EMBEDDINGS_512.CHUNK</code> rows per <code>WEBSITE_ID</code>.
+</div>
+
+<h2><span class="n">How</span> we get the final result</h2>
+<div class="card final">
+  <h3>End to end</h3>
+  <ol style="margin:0;padding-left:20px">
+    <li><b>Competitors</b> from the client drug + CF terms (Stage 01).</li>
+    <li><b>Trusted source documents</b> via the LLM_VALIDATION gate + vector search (Stage 02).</li>
+    <li><b>Grounded, verified claims</b> — quote-checked and adversarially confirmed, each tied to a (possibly mapped) doctor (Stage 03).</li>
+    <li><b>Aggregated view</b> — sentiment splits + narrative per competitor (Stage 04).</li>
+    <li><b>Reports</b> — tabbed HTML + full Excel, every statement traceable to its source (Stage 05).</li>
+  </ol>
+  <p style="margin-bottom:0">The result is a list of competitor drugs, and for each: which doctors are talking about it, exactly what they said (verbatim + source link), the sentiment, and whether that doctor is a known (mapped) HCP — with false attributions and mere co-occurrences filtered out along the way.</p>
+</div>
+
+<h2><span class="n">Under</span> the hood</h2>
+<ul>
+  <li><b>LLMs:</b> AWS Bedrock (region <code>eu-central-1</code>) — <code>Qwen3-235B</code> for competitor ID, verify &amp; synthesis; <code>Amazon Nova Pro</code> for claim extraction. All at temperature 0.</li>
+  <li><b>Embeddings:</b> a local ONNX model (GTE multilingual, 768-dim) — queries embedded at runtime, chunk embeddings pre-computed in Snowflake; similarity via <code>VECTOR_COSINE_SIMILARITY</code>.</li>
+  <li><b>Snowflake auth:</b> AWS Secrets Manager private-key (key-pair) auth via the shared <code>ParameterManager</code> / <code>SecretReader</code> helpers.</li>
+  <li><b>Reranker:</b> <code>reranker.py</code> exists but is <em>unused</em> after the rework (kept for parity).</li>
+</ul>
+
+<footer>
+  Explainer for Service 1.2 — Competitive HCP Communication Monitoring. Source of truth: <code>a_comp_hcp_communication/</code> (stages 01–05, <code>config.ini</code>, <code>CLAUDE.md</code>). Grounding model: Layer 1 (LLM_VALIDATION gate) → Layer 2 (scoped vector search) → Layer 3 (LLM-wiki: ingest → ground → verify → map).
+</footer>
+
+</div>
+</body>
+</html>

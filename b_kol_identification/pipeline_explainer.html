@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Service 2.1 — KOL Identification Pipeline Overview</title>
+<title>Service 2.1 — KOL Identification: Pipeline &amp; Report Guide</title>
 <style>
   :root{
     --bg:#f4f6f8; --card:#fff; --ink:#1b2430; --muted:#5c6774; --line:#e2e7ee;
@@ -13,18 +13,17 @@
     --amber:#b7791f; --amber-bg:#fbf1dd;
     --emerald:#1f8a5b; --emerald-bg:#e7f5ee;
     --red:#b4432f; --red-bg:#fbeeeb;
-    /* stage hues — deliberately multi-colour, all muted/professional */
-    --s1:#3b5b92; --s2:#0d7d74; --s3:#6d5ac0; --s4:#b7791f; --s5:#1f8a5b;
+    --s1:#3b5b92; --s2:#0d7d74; --s3:#6d5ac0; --s4:#b7791f; --s5:#1f8a5b; --s6:#6b7684;
   }
   *{box-sizing:border-box}
   body{margin:0;background:var(--bg);color:var(--ink);
     font:15px/1.58 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;}
-  .wrap{max-width:1040px;margin:0 auto;padding:32px 24px 72px;}
+  .wrap{max-width:1800px;margin:0 auto;padding:32px 12px 72px;}
   header{border-bottom:3px solid var(--accent);padding-bottom:16px;margin-bottom:8px;}
   header .kicker{font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);font-weight:800;}
   h1{font-size:28px;margin:6px 0 6px;letter-spacing:-.01em;}
-  header .ctx{color:var(--muted);font-size:14.5px;max-width:82ch;}
-  h2{font-size:19px;margin:42px 0 12px;padding-top:10px;border-top:1px solid var(--line);}
+  header .ctx{color:var(--muted);font-size:14.5px;max-width:84ch;}
+  h2{font-size:19px;margin:40px 0 12px;padding-top:10px;border-top:1px solid var(--line);}
   h2 .n{color:var(--teal);font-weight:800;}
   h3{font-size:15px;margin:18px 0 8px;}
   p{margin:9px 0;}
@@ -35,6 +34,7 @@
   .lead{background:linear-gradient(180deg,#fff,#f5f9ff);border-left:4px solid var(--accent);}
   .lead h3{margin-top:0;color:var(--accent);}
   ul{margin:8px 0;padding-left:20px;} li{margin:5px 0;}
+  ol{margin:8px 0;padding-left:22px;}
   .why{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
   @media(max-width:720px){.why{grid-template-columns:1fr}}
   .fail{border:1px solid #f0d7d0;background:var(--red-bg);border-radius:9px;padding:14px 16px;}
@@ -50,14 +50,14 @@
   /* funnel */
   .funnel{margin:16px 0 8px;display:flex;flex-direction:column;align-items:center;gap:0;}
   .fstep{position:relative;color:#fff;text-align:center;padding:12px 16px;border-radius:8px;margin:0 0 8px;
-    width:100%;max-width:840px;font-size:13.5px;line-height:1.4;}
+    width:100%;max-width:860px;font-size:13.5px;line-height:1.4;}
   .fstep b{font-size:14.5px;}
   .fstep small{display:block;color:rgba(255,255,255,.9);font-weight:400;margin-top:3px;font-size:12.5px;}
-  .fw1{max-width:840px;background:#3b5b92}
-  .fw2{max-width:660px;background:#0d7d74}
-  .fw3{max-width:520px;background:#6d5ac0}
-  .fw4{max-width:400px;background:#b7791f}
-  .fw5{max-width:300px;background:#1f8a5b;font-weight:700}
+  .fw1{max-width:860px;background:#3b5b92}
+  .fw2{max-width:680px;background:#0d7d74}
+  .fw3{max-width:540px;background:#6d5ac0}
+  .fw4{max-width:420px;background:#b7791f}
+  .fw5{max-width:310px;background:#1f8a5b;font-weight:700}
   .farrow{color:var(--muted);font-size:18px;line-height:1;margin:-4px 0 4px;}
   /* flow rail */
   .rail{margin:18px 0 6px;}
@@ -79,11 +79,13 @@
   .chip{font-size:11.5px;background:#eef1f5;border:1px solid var(--line);border-radius:6px;padding:2px 8px;color:#3a4650;}
   .chip.tbl{background:var(--emerald-bg);border-color:#cfe6da;color:var(--emerald);}
   .chip.llm{background:var(--violet-bg);border-color:#ddd3f2;color:var(--violet);}
+  .chip.vec{background:var(--amber-bg);border-color:#ecdcb6;color:var(--amber);}
   .chip.no{background:#eef1f5;border-color:var(--line);color:var(--muted);}
   table{border-collapse:collapse;width:100%;font-size:13px;margin:10px 0;}
   th,td{border:1px solid var(--line);padding:7px 10px;text-align:left;vertical-align:top;}
   th{background:#eef2f7;font-weight:700;}
   td.mono,th.mono{font-family:"SF Mono",Menlo,monospace;font-size:12px;}
+  .tbl-wrap{overflow-x:auto;}
   .warn{background:var(--amber-bg);border-left:4px solid var(--amber);border-radius:8px;padding:12px 16px;margin:14px 0;font-size:13.5px;}
   .warn b{color:var(--amber);}
   .final{background:var(--emerald-bg);border:1px solid #cfe6da;border-radius:10px;padding:16px 20px;}
@@ -93,8 +95,44 @@
   .pill.a{background:var(--emerald-bg);color:var(--emerald);}
   .pill.b{background:var(--accent-bg);color:var(--accent);}
   .pill.c{background:#eef1f5;color:var(--muted);}
+  .pill.rise{background:var(--amber-bg);color:var(--amber);}
+  .pill.ext{background:var(--violet-bg);color:var(--violet);}
   footer{margin-top:40px;color:var(--muted);font-size:12px;border-top:1px solid var(--line);padding-top:14px;}
-  @media print{body{background:#fff}.card,.body,.track,.fail,.fstep{break-inside:avoid}h2{break-after:avoid}}
+  /* formula + example boxes */
+  .formula{background:#0f1826;color:#e8eef6;border-radius:10px;padding:16px 18px;margin:14px 0;
+    font-family:"SF Mono",Menlo,Consolas,monospace;font-size:13.5px;line-height:1.7;overflow-x:auto;}
+  .formula .rel{color:#7fb2ff} .formula .rch{color:#c9b6ff} .formula .rat{color:#f2c879} .formula .op{color:#9aa7b8}
+  .example{background:#fff;border:1px dashed var(--accent);border-radius:10px;padding:14px 18px;margin:14px 0;}
+  .example h4{margin:0 0 8px;color:var(--accent);font-size:14px;}
+  .defs{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin:14px 0;}
+  @media(max-width:720px){.defs{grid-template-columns:1fr}}
+  .def{border:1px solid var(--line);border-radius:10px;padding:14px 16px;background:#fff;}
+  .def.rel{border-top:4px solid var(--accent)} .def.rch{border-top:4px solid var(--violet)} .def.rat{border-top:4px solid var(--amber)}
+  .def h4{margin:0 0 4px;font-size:15px;} .def .wt{font-size:12px;color:var(--muted);font-weight:700;}
+  .faq{background:#fff;border:1px solid var(--line);border-radius:10px;padding:4px 18px;margin:14px 0;}
+  .faq details{border-bottom:1px solid var(--line);padding:10px 0;}
+  .faq details:last-child{border-bottom:none;}
+  .faq summary{cursor:pointer;font-weight:700;color:var(--accent);list-style:none;}
+  .faq summary::-webkit-details-marker{display:none}
+  .faq summary::before{content:"›";display:inline-block;margin-right:8px;transition:transform .15s;color:var(--muted);}
+  .faq details[open] summary::before{transform:rotate(90deg);}
+  .faq p{font-size:13.5px;}
+  /* legend swatches for the network explainer */
+  .swatch{display:inline-block;width:12px;height:12px;border-radius:50%;vertical-align:middle;margin-right:5px;}
+  /* main tabs */
+  .maintabs{display:flex;gap:4px;margin:22px 0 4px;border-bottom:2px solid var(--line);flex-wrap:wrap;}
+  .maintab{appearance:none;border:none;background:none;font:inherit;cursor:pointer;
+    padding:11px 20px;font-weight:700;color:var(--muted);border-bottom:3px solid transparent;margin-bottom:-2px;}
+  .maintab:hover{color:var(--accent);}
+  .maintab.active{color:var(--accent);border-bottom-color:var(--accent);}
+  .maintab .tnum{display:inline-flex;width:20px;height:20px;border-radius:50%;background:var(--accent-bg);
+    color:var(--accent);font-size:12px;align-items:center;justify-content:center;margin-right:8px;vertical-align:middle;}
+  .maintab.active .tnum{background:var(--accent);color:#fff;}
+  .tabpanel{display:none;} .tabpanel.active{display:block;}
+  body:not(.js-tabs) .tabpanel{display:block;}      /* no-JS: show everything */
+  body:not(.js-tabs) .maintabs{display:none;}
+  @media print{body{background:#fff}.tabpanel{display:block!important}.maintabs{display:none}
+    .card,.body,.track,.fail,.fstep{break-inside:avoid}h2{break-after:avoid}}
 </style>
 </head>
 <body>
@@ -102,64 +140,83 @@
 
 <header>
   <div class="kicker">Service 2.1 · KOL Identification &amp; Mapping</div>
-  <h1>How the pipeline works</h1>
-  <div class="ctx">A step-by-step walkthrough: how we rank the true opinion leaders for an indication by counting the <b>genuinely relevant sources</b> attributed to each doctor — and why we spend LLM budget only on the handful of candidates who could actually make the top list.</div>
+  <h1>Pipeline &amp; report guide</h1>
+  <div class="ctx">Two guides in one page. <b>Tab&nbsp;1</b> explains <em>how the pipeline finds and ranks the true opinion leaders</em> for an indication. <b>Tab&nbsp;2</b> explains <em>how to read the final HTML report</em> — what every number, colour and chart means — written so anyone can follow it, technical or not.</div>
 </header>
+
+<div class="maintabs" role="tablist">
+  <button class="maintab active" role="tab" onclick="return showMain('tab-pipeline', this)"><span class="tnum">1</span>How the pipeline works</button>
+  <button class="maintab" role="tab" onclick="return showMain('tab-report', this)"><span class="tnum">2</span>Reading the report</button>
+</div>
+
+<!-- ============================================================= TAB 1 -->
+<section class="tabpanel active" id="tab-pipeline" role="tabpanel">
 
 <div class="card lead">
   <h3>In one sentence</h3>
-  <p>For an indication (e.g. <b>Obesity</b>), we count — per doctor — how many sources <b>genuinely show that doctor engaging with the indication</b> (web statements they actually made, and PubMed articles they actually authored on-topic). The doctors with the most verified relevant sources are the KOLs. Everything that is merely a keyword co-occurrence is thrown away.</p>
+  <p>For an indication (e.g. <b>Obesity</b>) we find, per doctor, the sources that <b>genuinely show that doctor engaging with the topic</b> — web statements they actually made and PubMed articles they actually authored on-topic — then rank doctors by a <b>composite score</b> that blends three things: <b>how much</b> verified evidence they have, <b>how widely</b> they collaborate, and <b>how focused</b> their output is on the topic. Everything that is merely a keyword co-occurrence is thrown away before scoring.</p>
 </div>
 
-<h2><span class="n">Why</span> we rebuilt it</h2>
-<p>The first version scored HCPs with <code>0.45·pub + 0.30·cf + 0.25·digi</code> and produced professionally wrong rankings — human geneticists and lab-medicine physicians landed in the Obesity top-50. Two failure modes caused it, and the whole redesign exists to kill them:</p>
+<h2><span class="n">Why</span> the design looks the way it does</h2>
+<p>The very first version scored doctors with <code>0.45·pub + 0.30·cf + 0.25·digi</code> and produced professionally wrong rankings — human geneticists and lab-medicine physicians landed in the Obesity top-50. Two failure modes caused it, and the whole design exists to prevent them from ever coming back:</p>
 <div class="why">
   <div class="fail">
     <b>1 · Co-occurrence ≠ engagement</b>
-    <p style="margin-bottom:0">The old <code>cf_count</code> only meant an indication keyword and a doctor's name appeared in the <em>same document</em>. It never checked whether the doctor said anything about the topic.</p>
+    <p style="margin-bottom:0">The old <code>cf_count</code> only meant an indication keyword and a doctor's name appeared in the <em>same document</em>. It never checked whether the doctor actually said anything about the topic.</p>
   </div>
   <div class="fail">
     <b>2 · Wrong signals dominated</b>
-    <p style="margin-bottom:0">DigiScore (25% weight) floated doctors with ≤1 publication to the top, and PubMed "relevance" was a global similarity cut with no per-doctor topical check.</p>
+    <p style="margin-bottom:0">A "DigiScore" (25% weight) floated doctors with ≤1 publication to the top, and PubMed "relevance" was a global similarity cut with no per-doctor topical check.</p>
   </div>
 </div>
 
 <div class="card principle" style="margin-top:16px">
-  <h3 style="margin-top:0">The one principle</h3>
-  <p style="margin-bottom:0"><b>A KOL's score = the number of genuinely relevant sources attributed to them.</b> "Genuine" is decided the same way on both tracks: an LLM confirms the doctor is <em>actively engaging with / sharing a view on the indication</em> in that source. No DigiScore. No raw keyword counts. No global similarity percentile. This encodes the client's own criteria: <em>most relevant sources</em> and <em>recency</em>.</p>
+  <h3 style="margin-top:0">The one principle that never bends</h3>
+  <p style="margin-bottom:0"><b>Relevance is decided one source at a time, by an LLM, and only sources that pass count.</b> "Genuine" is decided the same way on both evidence tracks: an LLM confirms the doctor is <em>actively engaging with / sharing a view on the indication</em> in that source. The composite score's other two ingredients (reach and focus) are computed <em>on top of</em> that verified evidence — they can re-rank doctors who already cleared the bar, but they can never let an unverified doctor in. No DigiScore. No raw keyword counts. No global similarity percentile.</p>
 </div>
 
 <h2><span class="n">The</span> cost funnel — cheap first, LLM last</h2>
-<p>We must not send thousands of documents to the LLM. So we narrow the field with <b>cheap SQL</b> first, and only the survivors ever reach the expensive step. This is the heart of the design:</p>
+<p>We must not send thousands of documents to the expensive LLM. So we narrow the field with <b>cheap database queries</b> (plus a fast local embedding step) first, and only the survivors ever reach the LLM. This is the heart of the design:</p>
 <div class="funnel">
-  <div class="fstep fw1"><b>ALL HCPs (~1,200)</b><small>Stage 01 · cheap SQL only — no LLM · count candidate web + PubMed sources per doctor</small></div>
+  <div class="fstep fw1"><b>ALL doctors (~1,176)</b><small>Stage 01 · cheap SQL + a local embedding call, no LLM · count candidate web + PubMed sources per doctor</small></div>
   <div class="farrow">▼</div>
   <div class="fstep fw2"><b>Top ~75 candidates</b><small>ranked by candidate-source count (an upper bound on the real score) · everyone else dropped before any LLM spend</small></div>
   <div class="farrow">▼</div>
-  <div class="fstep fw3"><b>Fetch full text</b><small>Stages 02 · web CONTENT + PubMed title/abstract for the 75 · no vector search</small></div>
+  <div class="fstep fw3"><b>Fetch full text</b><small>Stage 02 · web CONTENT + PubMed title/abstract for the 75</small></div>
   <div class="farrow">▼</div>
   <div class="fstep fw4"><b>LLM verifies</b><small>Stage 03 · ingest → ground → verify · a source counts only if a claim survives both checks</small></div>
   <div class="farrow">▼</div>
-  <div class="fstep fw5"><b>Top 25 KOLs</b><small>Stages 04–05 · rank on verified sources → report</small></div>
+  <div class="fstep fw5"><b>Top 25 KOLs</b><small>Stages 04–05 · composite score → tiers → report</small></div>
 </div>
 <p class="muted" style="font-size:13.5px">The 75 → 25 buffer absorbs candidates that <em>look</em> strong on cheap counts but collapse under verification — exactly the off-target-specialty problem. They simply fall out; a genuine doctor takes the slot. <b>No hardcoded specialty exclusions</b> — relevance verification does the filtering.</p>
 
 <h2><span class="n">Two</span> evidence tracks</h2>
-<p>Every source is one of two kinds. Both are counted the same way in the end, but they are gathered and verified slightly differently:</p>
+<p>Every source is one of two kinds. Both feed the same score in the end, but they are gathered and verified slightly differently:</p>
 <div class="tracks">
   <div class="track web">
     <h3>Web / practice communication</h3>
     <p>From the <code>LLM_VALIDATION</code> table. Here the doctor's <b>authorship is unknown</b>, so attribution is the whole problem — the LLM must confirm the named doctor is <em>actively discussing</em> the indication, not merely co-present on the page.</p>
-    <p style="margin-bottom:0" class="muted" style="font-size:13px">Cheap gate: <code>NEAR_BY=1</code>, <code>IS_OLD=0</code>, <code>IS_DOCTOR=1</code>, <code>IN_RELATION&gt;29</code>, keyword ∈ indication terms.</p>
+    <p style="margin-bottom:0" class="muted">Candidate net = a cheap <b>keyword gate</b> (<code>NEAR_BY=1</code>, <code>IS_OLD=0</code>, <code>IS_DOCTOR=1</code>, <code>IN_RELATION&gt;29</code>, keyword ∈ indication terms) <b>combined with a vector-search arm</b> that recovers on-topic pages the keyword gate would miss (see below).</p>
   </div>
   <div class="track pub">
     <h3>PubMed science</h3>
-    <p>From <code>PUBMED_ARTICLE_MAPPING</code> (<code>merge_result&gt;1</code> = <b>verified author</b>) → text from <code>CORE.PUBMED.ARTICLE</code>. Authorship is already proven, so the LLM's job is <b>relevance</b>: is this article genuinely about the indication? Co-authors (incl. doctors outside our targeting) come structurally from <code>CORE.PUBMED.AUTHOR</code>.</p>
+    <p>From <code>PUBMED_ARTICLE_MAPPING</code> (<code>MERGE_RESULT&gt;1</code> = <b>verified author</b>) → text from <code>CORE.PUBMED.ARTICLE</code>. Authorship is already proven, so the LLM's job is <b>relevance</b>: is this article genuinely about the indication? Co-authors (incl. doctors outside our targeting) come structurally from <code>CORE.PUBMED.AUTHOR</code>.</p>
   </div>
 </div>
 
-<h2><span class="n">The</span> five stages</h2>
-<p>Each stage writes a JSON checkpoint and is <b>resume-safe</b> (skips if its output exists, unless you pass <code>--force</code>). They run in order:</p>
+<div class="card" style="border-top:4px solid var(--amber);margin-top:16px">
+  <h3 style="margin-top:0;color:var(--amber)">New: the vector-search arm on web (hybrid recall)</h3>
+  <p>The keyword gate is precise but literal: it can miss a doctor whose web page discusses obesity without ever containing an exact indication term (synonyms, paraphrase, German/English mix). The <b>vector arm</b> recovers those. It is turned on by <code>[hybrid].hybrid_relevance = true</code>.</p>
+  <ul style="margin-bottom:6px">
+    <li><b>Embed the query:</b> the indication name + its PCA terms are turned into a 768-number "meaning vector" using a local ONNX model (<code>VectorCreator</code>, GTE multilingual, L2-normalised) — no external API, runs in-process.</li>
+    <li><b>Match by meaning:</b> that vector is cosine-compared against pre-computed page embeddings in <code>WEBSITES_VERTICAL_EMBEDDINGS_512</code>. A page counts as a candidate if similarity clears <code>vector_sim_threshold</code> (default <b>0.55</b>), keeping the top <code>vector_top_k_per_hcp</code> (default <b>20</b>) per doctor, still gated by <code>NEAR_BY</code>/<code>IS_DOCTOR</code>.</li>
+    <li><b>Union, not replacement:</b> keyword candidates ∪ vector candidates are merged (<code>merge_web_ids</code>). The vector arm only ever <b>widens who gets a chance</b> — it never bypasses Stage 03.</li>
+  </ul>
+  <p style="margin-bottom:0" class="muted">Because Stage 03's LLM verify remains the <b>sole precision arbiter</b>, a wider net cannot inflate anyone's final score — it can only give a genuine-but-keyword-invisible doctor the chance to earn one. A PubMed vector arm and a cross-encoder <code>Reranker</code> are vendored and config-gated but <b>off by default and unwired this iteration</b>.</p>
+</div>
+
+<h2><span class="n">The</span> six stages</h2>
+<p>Each stage writes a JSON checkpoint and is <b>resume-safe</b> (skips if its output exists, unless you pass <code>--force</code>). Stages 01–05 run in order; Stage 06 is an optional backtest.</p>
 
 <div class="rail">
 
@@ -170,18 +227,19 @@
       <h3>Fetch &amp; shortlist</h3>
       <div class="file">01_fetch_and_shortlist.py</div>
       <div class="kv">
-        <b>What happens (cheap SQL, no LLM):</b>
+        <b>What happens (cheap SQL + local embeddings, no LLM):</b>
         <ul style="margin-top:4px">
-          <li>Load the indication's terms — <code>CONTENT_FRAME_SPEC</code> where <code>PCA='X'</code> (configurable to all terms).</li>
-          <li><b>Web candidates</b> per doctor: gate <code>LLM_VALIDATION</code> on <code>NEAR_BY=1</code>, <code>IS_OLD=0</code>, <code>IS_DOCTOR=1</code> + <code>IN_RELATION&gt;29</code> + a term match → candidate <code>WEBSITE_ID</code>s + a count. (<code>IS_OLD=0</code> is the only freshness filter — no date window on web.)</li>
-          <li><b>PubMed candidates</b> per doctor: verified authorship (<code>merge_result&gt;1</code>) ∩ a topical CF-flag, within a <b>5-year window</b> → candidate <code>PMID</code>s + a CF-treffer-weighted count. The window is anchored on <b><code>MAX(YEAR_VAL)</code> in <code>PUBMED_CONTENT_FRAME_SINGLE_TBL</code></b> (the latest year the targeting actually covers — e.g. 2023), <em>not</em> the current calendar year, so a 2023 targeting scores 2018–2023.</li>
-          <li><b>Publication-history bars (display only):</b> a separate query counts each doctor's CF-flagged PubMed articles per year over <b>20 years</b> back from the same anchor. These counts drive the bar charts only — they are <em>never</em> sent to the LLM and never affect the score. <b>Bar height = CF-flag count</b> (keyword-level activity, unverified); only the most-recent-5-years articles go through LLM-wiki verification and contribute to the score, tier, and rising-star flags.</li>
-          <li><b>Shortlist:</b> <code>candidate_score = web_count + pubmed_count</code> (an upper bound on the final verified score) → keep the top <b>~75</b>. Metadata (name, city, specialty, A/B/C/D rating) is attached; <b>specialty is displayed, never used to filter</b>.</li>
+          <li>Load the indication's terms — <code>CONTENT_FRAME_SPEC</code> where <code>PCA='X'</code>.</li>
+          <li><b>Web candidates</b> per doctor: keyword gate <b>∪</b> vector-recall arm (see the hybrid box above), merged into one candidate set + a count.</li>
+          <li><b>PubMed candidates</b> per doctor: verified authorship (<code>MERGE_RESULT&gt;1</code>) ∩ a topical CF-flag, within a <b>5-year window</b> (<code>pubmed_window_years</code>), CF-treffer-weighted. The window is anchored on the <b>anchor year</b> (see below), not today's date.</li>
+          <li><b>Publication-history bars (display only):</b> a separate query counts each doctor's CF-flagged PubMed articles per year over <b>20 years</b> (<code>pub_history_years</code>). These drive the report's bar charts only — they are <em>never</em> sent to the LLM and never affect the score.</li>
+          <li><b>Shortlist:</b> <code>candidate_score = web_candidate_count + pubmed_candidate_count</code> (an upper bound on the final verified relevance) → flag the top <b>~75</b> as <code>shortlisted</code>. Metadata (name, city, specialty, A/B/C/D rating) is attached; <b>specialty is displayed, never used to filter</b>. Also builds a per-doctor total-source count used later as the "focus ratio" denominator.</li>
         </ul>
       </div>
       <div class="meta">
         <span class="chip tbl">CONTENT_FRAME_SPEC</span>
         <span class="chip tbl">LLM_VALIDATION</span>
+        <span class="chip vec">WEBSITES_VERTICAL_EMBEDDINGS_512</span>
         <span class="chip tbl">PUBMED_ARTICLE_MAPPING</span>
         <span class="chip tbl">PUBMED_CONTENT_FRAME_SINGLE_TBL</span>
         <span class="chip tbl">CUSTOMER_SOURCE + RATING_RESULT_FINAL</span>
@@ -198,17 +256,17 @@
       <h3>Retrieve source text</h3>
       <div class="file">02_retrieve_sources.py</div>
       <div class="kv">
-        <b>What happens (cheap SQL, no vector search):</b> for the ~75 shortlisted doctors only, pull the actual text of every candidate source:
+        <b>What happens (cheap SQL, no LLM):</b> for the ~75 shortlisted doctors only, pull the actual text of every candidate source:
         <ul style="margin-top:4px">
-          <li><b>Web:</b> full <code>CONTENT</code> from <code>LLM_VALIDATION</code> for each candidate <code>WEBSITE_ID</code>.</li>
+          <li><b>Web:</b> full <code>CONTENT</code> from <code>LLM_VALIDATION</code> for each candidate <code>WEBSITE_ID</code> (+ its URL).</li>
           <li><b>PubMed:</b> <code>TITLE</code> + <code>ABSTRACT</code> from <code>CORE.PUBMED.ARTICLE</code> for each candidate <code>PMID</code>.</li>
         </ul>
-        <b>Why no vector search?</b> Service 1.2 used it to pick on-topic docs out of the <em>whole corpus</em>. Here the funnel (75 doctors) and the gate (<code>IN_RELATION&gt;29</code> + term match) already guarantee on-topic docs — so we simply take all of them. A recency-ordered per-doctor cap is the only limiter, purely to bound cost.
+        A <b>recency-ordered per-doctor cap</b> (<code>max_sources_per_hcp</code>, default 40) is the only limiter — purely to bound LLM cost, not a relevance filter.
       </div>
       <div class="meta">
         <span class="chip tbl">LLM_VALIDATION (CONTENT)</span>
         <span class="chip tbl">CORE.PUBMED.ARTICLE</span>
-        <span class="chip no">no LLM · no embeddings</span>
+        <span class="chip no">no LLM · no vector search here</span>
       </div>
       <div><span class="out">→ data/sources.json</span></div>
     </div>
@@ -223,12 +281,12 @@
       <div class="kv">
         <b>What happens, per source (web &amp; PubMed alike):</b>
         <ul style="margin-top:4px">
-          <li><b>Ingest</b> (LLM) — extract whether the doctor is <em>genuinely engaging with the indication</em>: a verbatim supporting quote, a one-line statement, sentiment, the <b>themes</b> (which indication terms), and any <b>other doctors mentioned</b>.</li>
-          <li><b>Quote-grounding</b> (deterministic) — the verbatim quote must literally appear in the source text, or the claim is dropped for free — <em>before</em> spending a verify call.</li>
-          <li><b>Verify</b> (a second, different LLM, adversarial) — returns true only if the source really shows this doctor engaging with the indication.</li>
+          <li><b>Ingest</b> (LLM #1) — extract whether the doctor is <em>genuinely engaging with the indication</em>: a verbatim supporting quote, a one-line statement, sentiment, the <b>themes</b> (which indication terms), and any <b>other doctors mentioned</b>.</li>
+          <li><b>Quote-grounding</b> (deterministic, no LLM) — the verbatim quote must literally appear in the source text, or the claim is dropped for free — <em>before</em> spending a verify call.</li>
+          <li><b>Verify</b> (LLM #2, a different, adversarial model) — returns true only if the source really shows this doctor engaging with the indication.</li>
           <li><b>Map</b> — resolve the doctor and any mentioned doctors against our targeting roster by name.</li>
         </ul>
-        A source <b>counts as relevant</b> for a doctor only if it yields ≥1 grounded + verified claim. Writes a browsable <code>wiki/&lt;ts&gt;/</code> tree with a <code>drops.json</code> recording everything discarded and why.
+        A source <b>counts as relevant</b> for a doctor only if it yields ≥1 grounded + verified claim. This stage is <b>untouched by the hybrid arm and the composite score</b> — it stays the sole precision arbiter. Writes a browsable <code>wiki/&lt;ts&gt;/</code> tree with a <code>drops.json</code> recording everything discarded and why.
       </div>
       <div class="meta">
         <span class="chip llm">Ingest: Nova Pro (Bedrock)</span>
@@ -243,20 +301,21 @@
   <div class="stage">
     <div class="spine"><div class="badge" style="background:var(--s4)">04</div><div class="line"></div></div>
     <div class="body">
-      <h3>Assemble the KOL ranking</h3>
+      <h3>Assemble the KOL ranking — the composite score</h3>
       <div class="file">04_assemble_kols.py</div>
       <div class="kv">
-        <b>What happens (no LLM):</b>
+        <b>What happens (no LLM):</b> compute three factors per doctor, normalise each across the shortlisted pool, and combine them into one <code>kol_score</code>:
         <ul style="margin-top:4px">
-          <li><b>Final score</b> = verified web sources + verified PubMed sources. Rank descending; latest source year breaks ties (recency).</li>
-          <li><b>Tiers</b> <span class="pill a">A</span> <span class="pill b">B</span> <span class="pill c">C</span> from the score distribution of the shortlist.</li>
-          <li><b>Rising Stars</b> — recent vs. prior activity (same logic as before), but computed only on <em>verified-relevant</em> PubMed articles by year, so we never crown a rising star on off-topic output.</li>
-          <li><b>Collaboration network</b> — PubMed co-authors (structural, incl. non-targeted doctors) + web co-mentions (from the LLM). <b>Thematic distribution</b> — aggregated from each doctor's verified claim themes.</li>
+          <li><b>Relevance</b> — count of verified web + verified PubMed sources (the backbone).</li>
+          <li><b>Reach</b> — distinct co-authors across the doctor's verified-relevant PubMed articles (breadth of collaboration).</li>
+          <li><b>Ratio</b> — verified-relevant sources ÷ all of the doctor's sources (topical focus).</li>
+          <li><b>Tiers</b> <span class="pill a">A</span> <span class="pill b">B</span> <span class="pill c">C</span> from the score distribution; <b>Rising Stars</b> from verified-relevant PubMed activity by year; <b>themes</b>, <b>co-author network</b>, and <b>web co-mentions</b>.</li>
         </ul>
+        The exact formula, normalisation, tiers and rising-star rules are explained in <b>Tab&nbsp;2</b>.
       </div>
       <div class="meta">
         <span class="chip tbl">CORE.PUBMED.AUTHOR</span>
-        <span class="chip no">no LLM — plain tallies</span>
+        <span class="chip no">no LLM — plain arithmetic on Stage-03 output</span>
       </div>
       <div><span class="out">→ data/kol_final.json</span></div>
     </div>
@@ -269,59 +328,267 @@
       <h3>Generate the report</h3>
       <div class="file">05_generate_report.py</div>
       <div class="kv">
-        <b>What happens:</b> renders a self-contained <b>HTML report</b> (top 25) — executive dashboard, KOL ranking, rising stars, thematic distribution, regional distribution, collaboration network, and individual profiles with real verbatim quotes + source links — plus an <b>Excel</b> export with HCP-level rows (name, institution, specialty, verified-source count, themes, source URLs, quotes). Professional multi-hue palette, not the old monotone blue.
+        <b>What happens:</b> renders a self-contained <b>HTML report</b> (top 25) — overview dashboard + KOL ranking, rising stars, thematic heatmap, regional distribution, an interactive collaboration-network graph, and individual profiles with real verbatim quotes + source links — plus an <b>Excel</b> export with one row per KOL. No network, fonts or CDN: everything is inlined so it opens anywhere.
       </div>
       <div class="meta"><span class="chip no">no LLM — pure rendering</span></div>
       <div><span class="out">→ results/kol_report_&lt;ts&gt;.html · kol_report_&lt;ts&gt;.xlsx</span></div>
     </div>
   </div>
 
+  <!-- Stage 06 -->
+  <div class="stage">
+    <div class="spine"><div class="badge" style="background:var(--s6)">06</div><div class="line"></div></div>
+    <div class="body">
+      <h3>Backtest compare <span class="muted" style="font-weight:400;font-size:12px">(optional)</span></h3>
+      <div class="file">06_backtest_compare.py</div>
+      <div class="kv">
+        <b>What happens:</b> a "time machine" validation. Run the pipeline twice — once pinned to a past year, once to the latest — then diff the two <code>kol_final.json</code> files. It reports <b>which past rising stars became today's KOLs</b>, tier moves, and brand-new KOLs. Since there is no ground-truth label for "is a KOL", this is how we sanity-check that the model actually predicts real-world rise.
+      </div>
+      <div class="meta"><span class="chip no">no LLM · needs two runs</span></div>
+      <div><span class="out">→ data/backtest_compare.json</span></div>
+    </div>
+  </div>
+
 </div>
 
+<h2><span class="n">The</span> anchor year (time machine)</h2>
+<p>PubMed sources have dates; web sources do not. To keep runs reproducible and to enable the backtest, PubMed windows are anchored on <code>[funnel].as_of_year</code>:</p>
+<ul>
+  <li><code>as_of_year = latest</code> → anchor = the most recent year present in the PubMed CF table.</li>
+  <li><code>as_of_year = 2018</code> (a pinned year) → the PubMed scoring window, history window and focus-ratio denominator are all capped at 2018, so a past year can be replayed. Web sources are timestamp-free and always shown as-is.</li>
+</ul>
+<p class="muted" style="font-size:13px">When a run is pinned to a past year, the report shows a "Backtest view" banner so nobody mistakes it for a live ranking.</p>
+
 <h2><span class="n">The</span> tables, at a glance</h2>
+<div class="tbl-wrap">
 <table>
   <thead><tr><th class="mono">Table</th><th>Location</th><th>Used in</th><th>What it gives us</th></tr></thead>
   <tbody>
-    <tr><td class="mono">CONTENT_FRAME_SPEC</td><td>CUST_TC · V1</td><td>01</td><td>Indication terms (<code>PCA='X'</code>) that define what "on-topic" means</td></tr>
-    <tr><td class="mono">LLM_VALIDATION</td><td>CUST_TC · FINAL</td><td>01, 02</td><td><b>Web gate</b> — <code>NEAR_BY, IS_OLD, IS_DOCTOR, IN_RELATION</code>, keywords + full <code>CONTENT</code> + <code>WEBSITE_ID, S_CUSTOMER_ID</code></td></tr>
+    <tr><td class="mono">CONTENT_FRAME_SPEC</td><td>CUST_TC · TMP</td><td>01</td><td>Indication / PCA terms that define what "on-topic" means</td></tr>
+    <tr><td class="mono">LLM_VALIDATION</td><td>CUST_TC · FINAL</td><td>01, 02</td><td><b>Web gate</b> — <code>NEAR_BY, IS_OLD, IS_DOCTOR, IN_RELATION</code>, keywords + full <code>CONTENT</code> + <code>WEBSITE_ID</code></td></tr>
+    <tr><td class="mono">WEBSITES_VERTICAL_EMBEDDINGS_512</td><td>CUST_TC · FINAL</td><td>01</td><td><b>Vector-recall arm</b> — per-page embeddings cosine-matched against the indication query vector</td></tr>
     <tr><td class="mono">PUBMED_ARTICLE_MAPPING</td><td>CUST_TC · TMP</td><td>01</td><td>Links doctor ↔ PubMed article; <code>MERGE_RESULT&gt;1</code> = <b>verified author</b></td></tr>
-    <tr><td class="mono">PUBMED_CONTENT_FRAME_SINGLE_TBL</td><td>CUST_TC · TMP</td><td>01</td><td>PMID, <code>YEAR</code>, and CF-term flags — first-level PubMed relevance</td></tr>
+    <tr><td class="mono">PUBMED_CONTENT_FRAME_SINGLE_TBL</td><td>CUST_TC · FINAL</td><td>01</td><td>PMID, <code>YEAR_VAL</code>, and CF-term flags — first-level PubMed relevance</td></tr>
     <tr><td class="mono">CORE.PUBMED.ARTICLE</td><td>CORE · PUBMED</td><td>02</td><td>The article text: <code>TITLE, ABSTRACT, YEAR_VAL, JOURNAL_NAME</code></td></tr>
-    <tr><td class="mono">CORE.PUBMED.AUTHOR</td><td>CORE · PUBMED</td><td>04</td><td>All authors per PMID — builds the co-author network incl. external doctors</td></tr>
-    <tr><td class="mono">CUSTOMER_SOURCE + RATING_RESULT_FINAL</td><td>CUST_TC</td><td>01</td><td>HCP master record — name, city, specialty, A/B/C/D quality rating</td></tr>
+    <tr><td class="mono">CORE.PUBMED.AUTHOR</td><td>CORE · PUBMED</td><td>04</td><td>All authors per PMID — builds the co-author network + reach, incl. external doctors</td></tr>
+    <tr><td class="mono">CUSTOMER_SOURCE + RATING_RESULT_FINAL</td><td>CUST_TC · TMP/FINAL</td><td>01</td><td>HCP master record — name, city, specialty, A/B/C/D quality rating</td></tr>
   </tbody>
 </table>
-<p class="muted" style="font-size:13px">Stages 03–05 don't touch Snowflake; they work purely on the JSON checkpoints. The pipeline reads across three databases (<code>CUST_NOVO</code>, <code>CUST_TC</code>, <code>CORE</code>) in one connection via fully-qualified names.</p>
-
-<div class="warn">
-  <b>To confirm on the first live run:</b> the CF-flag column layout in <code>PUBMED_CONTENT_FRAME_SINGLE_TBL</code>; that <code>IN_RELATION</code> is numeric so <code>&gt;29</code> is the right cut; that <code>IS_OLD=0</code> is the intended web freshness filter; and the fully-qualified locations of the cross-database tables. We also log per-doctor candidate counts for the top 75 <em>before</em> Stage 03, to sanity-check LLM volume.
 </div>
-
-<h2><span class="n">How</span> we get the final result</h2>
-<div class="card final">
-  <h3>End to end</h3>
-  <ol style="margin:0;padding-left:20px">
-    <li><b>Count candidates cheaply</b> — web gate + verified PubMed authorship, per doctor (Stage 01).</li>
-    <li><b>Shortlist the top ~75</b> and fetch their source text — no LLM yet (Stages 01–02).</li>
-    <li><b>Verify relevance with the LLM</b> — grounded, adversarially confirmed; a source counts only if it survives (Stage 03).</li>
-    <li><b>Rank on verified relevant sources</b> — tiers, rising stars, network, themes (Stage 04).</li>
-    <li><b>Report the top 25</b> — HTML + Excel, every KOL backed by real quotes and source links (Stage 05).</li>
-  </ol>
-  <p style="margin-bottom:0">The result is a defensible KOL list: each ranked doctor is there because a specific number of sources <em>prove</em> they engage with the indication — with co-occurrences, wrong specialties, and unsupported signals filtered out along the way.</p>
-</div>
+<p class="muted" style="font-size:13px">Stages 03–06 don't touch Snowflake; they work purely on the JSON checkpoints. The pipeline reads across databases (<code>CUST_TC</code>, <code>CORE</code>) in one connection via fully-qualified names.</p>
 
 <h2><span class="n">Under</span> the hood</h2>
 <ul>
-  <li><b>LLMs:</b> AWS Bedrock (<code>eu-central-1</code>) — <code>Amazon Nova Pro</code> for ingest, <code>Qwen3-235B</code> for the adversarial verify. Temperature 0. Reused from Service 1.2's <code>pipeline_common.call_bedrock_json</code>.</li>
-  <li><b>No embeddings / no reranker:</b> the funnel + SQL gate replace vector search entirely.</li>
+  <li><b>LLMs:</b> AWS Bedrock (<code>eu-central-1</code>) — <code>Amazon Nova Pro</code> for ingest, <code>Qwen3-235B</code> for the adversarial verify. Temperature 0.</li>
+  <li><b>Embeddings:</b> a local ONNX model (GTE multilingual, 768-dim) for the vector-recall arm — no external API. The cross-encoder <code>Reranker</code> is vendored but not yet wired in.</li>
   <li><b>Snowflake auth:</b> AWS Secrets Manager private-key auth via the shared <code>ParameterManager</code> / <code>SecretReader</code> helpers.</li>
   <li><b>Cost control:</b> only ~75 doctors' sources within the anchored 5-year window reach the LLM; the 20-year history is cheap SQL counts for the charts and never hits the LLM. Grounding drops fabricated quotes before any verify call is spent.</li>
 </ul>
 
+<div class="warn">
+  <b>To confirm on the first live run:</b> the CF-flag column layout in <code>PUBMED_CONTENT_FRAME_SINGLE_TBL</code>; that <code>IN_RELATION</code> is numeric so <code>&gt;29</code> is the right cut; that <code>IS_OLD=0</code> is the intended web freshness filter; the real vector width of the <code>_512</code> embeddings column (the pipeline currently queries at 768 dims); and the fully-qualified locations of the cross-database tables.
+</div>
+
+</section>
+
+<!-- ============================================================= TAB 2 -->
+<section class="tabpanel" id="tab-report" role="tabpanel">
+
+<div class="card lead">
+  <h3>What this tab is for</h3>
+  <p>The report is one HTML file with a left-hand menu. This tab walks through every section and — crucially — explains what the numbers mean: the <b>composite score</b> and its <b>weight / norm / contribution</b> breakdown, how <b>tiers</b> are drawn, how <b>rising stars</b> are found, and how to read the <b>heatmap</b> and the <b>network graph</b>. If someone asks "why is this doctor #1?" or "how was the vector search done?", the answers are here.</p>
+</div>
+
+<h2><span class="n">The</span> report at a glance</h2>
+<p>The left menu groups the report into three areas:</p>
+<div class="tbl-wrap">
+<table>
+  <thead><tr><th>Menu group</th><th>Section</th><th>What it shows</th></tr></thead>
+  <tbody>
+    <tr><td rowspan="1"><b>OVERVIEW</b></td><td>Executive Dashboard</td><td>Six headline counters <em>and</em> the full ranked KOL table, one below the other.</td></tr>
+    <tr><td rowspan="4"><b>ANALYSIS</b></td><td>Rising Stars</td><td>Doctors whose verified output is accelerating or newly appeared.</td></tr>
+    <tr><td>Thematic Distribution</td><td>Heatmap of which sub-topics each KOL is verified on.</td></tr>
+    <tr><td>Regional Distribution</td><td>KOL counts by city, split by tier.</td></tr>
+    <tr><td>Collaboration Network</td><td>Interactive co-authorship graph + supporting tables.</td></tr>
+    <tr><td><b>PROFILES</b></td><td>KOL Profiles</td><td>One card per top KOL with quotes, themes, publication trend and score breakdown.</td></tr>
+  </tbody>
+</table>
+</div>
+<p class="muted" style="font-size:13px">The report shows the <b>top 25</b> KOLs. A "Backtest view" banner appears at the top whenever the run was pinned to a past year.</p>
+
+<h2><span class="n">The</span> composite score — the single most important number</h2>
+<p>Every KOL has one headline number, the <b>composite score</b> (<code>kol_score</code>), roughly between 0 and 1. It is a weighted blend of three factors. Think of it as: <em>"how much verified evidence (60%), how widely they collaborate (25%), and how focused they are on the topic (15%)."</em></p>
+
+<div class="formula">
+kol_score <span class="op">=</span>
+<span class="rel">0.60 × norm_relevance</span> <span class="op">+</span>
+<span class="rch">0.25 × norm_reach</span> <span class="op">+</span>
+<span class="rat">0.15 × norm_ratio</span>
+</div>
+
+<div class="defs">
+  <div class="def rel">
+    <h4>Relevance <span class="wt">weight 0.60</span></h4>
+    <p style="margin-bottom:0">How many sources an LLM <b>verified</b> as genuinely on-topic for this doctor (web + PubMed). This is the backbone — the thing we actually set out to measure.</p>
+  </div>
+  <div class="def rch">
+    <h4>Reach <span class="wt">weight 0.25</span></h4>
+    <p style="margin-bottom:0">How many <b>distinct co-authors</b> the doctor has across their verified PubMed articles (de-duplicated by ORCID or name; the doctor themselves excluded). A proxy for influence breadth.</p>
+  </div>
+  <div class="def rat">
+    <h4>Ratio (focus) <span class="wt">weight 0.15</span></h4>
+    <p style="margin-bottom:0">Verified-relevant sources ÷ <b>all</b> of the doctor's sources. High = the doctor is a topic specialist; low = the topic is a small part of a broad output. Neutral (0) for very thin profiles so they're neither punished nor rewarded.</p>
+  </div>
+</div>
+
+<h3>Weight vs. Norm vs. Contribution — the three columns you'll see</h3>
+<p>Click "Composite … — how it was scored" on any KOL row (or open a profile card) and you get a small table with exactly these columns. Here is what each one means, in order:</p>
+<div class="tbl-wrap">
+<table>
+  <thead><tr><th>Column</th><th>Plain meaning</th><th>Range</th></tr></thead>
+  <tbody>
+    <tr><td><b>Weight</b></td><td>How much this factor is <em>allowed</em> to matter, set once in config for the whole run (0.60 / 0.25 / 0.15). The same for every doctor.</td><td class="mono">fixed</td></tr>
+    <tr><td><b>Norm</b></td><td>This doctor's <em>normalised</em> value for the factor — their standing <b>relative to the other shortlisted doctors</b>, squeezed onto a 0–1 scale. 1.0 ≈ best in the pool, 0.0 ≈ lowest. Raw counts are <em>not</em> used directly; ranking-within-the-pool is, so one runaway doctor can't dominate.</td><td class="mono">0 → 1</td></tr>
+    <tr><td><b>Contribution</b></td><td>Weight × Norm — the actual number of points this factor adds to the composite score. The three contributions sum to the headline score.</td><td class="mono">0 → weight</td></tr>
+    <tr><td><b>Evidence</b></td><td>The plain-language backing (e.g. "12 verified sources", "8 co-authors, 3 institutions", "80% of 15 total sources").</td><td>—</td></tr>
+  </tbody>
+</table>
+</div>
+
+<div class="example">
+  <h4>Worked example</h4>
+  <p style="margin:4px 0">Suppose a doctor is near the top of the pool on evidence, mid-pack on collaboration, and quite focused:</p>
+  <table style="margin:6px 0">
+    <thead><tr><th>Factor</th><th>Weight</th><th>Norm</th><th>Contribution = W × N</th></tr></thead>
+    <tbody>
+      <tr><td>Relevance</td><td>0.60</td><td>0.90</td><td>0.540</td></tr>
+      <tr><td>Reach</td><td>0.25</td><td>0.50</td><td>0.125</td></tr>
+      <tr><td>Ratio</td><td>0.15</td><td>0.70</td><td>0.105</td></tr>
+      <tr><td colspan="3" style="text-align:right"><b>Composite score</b></td><td><b>0.770</b></td></tr>
+    </tbody>
+  </table>
+  <p style="margin-bottom:0" class="muted">So "why is this doctor high?" is answerable exactly: <b>0.54 of their 0.77 comes from verified relevance</b> — the evidence is doing most of the work, with reach and focus fine-tuning the order.</p>
+</div>
+
+<h3>How "Norm" is actually computed</h3>
+<p>The default method is <b>percentile</b> (config <code>normalization</code>; <code>minmax</code> and <code>zscore</code> also available). Percentile means: for each factor, a doctor's norm is essentially <em>the fraction of the pool scoring below them</em>, rescaled so the pool's best = 1 and worst = 0, with ties sharing a rank. The key consequence for non-technical readers: <b>norms are always relative to this run's shortlist</b> — a 0.9 means "near the top of these 75 candidates", not an absolute quality score.</p>
+
+<h2><span class="n">The</span> KOL ranking table — column by column</h2>
+<div class="tbl-wrap">
+<table>
+  <thead><tr><th>Column</th><th>Meaning</th></tr></thead>
+  <tbody>
+    <tr><td><b>#</b></td><td>Rank. Sorted by composite score; ties broken by most-recent verified PubMed year (recency wins).</td></tr>
+    <tr><td><b>Tier</b></td><td><span class="pill a">A</span> <span class="pill b">B</span> <span class="pill c">C</span> band (see below), plus a <span class="pill rise">Rising</span> flag where applicable.</td></tr>
+    <tr><td><b>Name / Specialty</b></td><td>The doctor and their specialty. <b>Specialty is shown for context only — it never affects ranking or filtering.</b></td></tr>
+    <tr><td><b>City</b></td><td>Practice city (from the HCP master record).</td></tr>
+    <tr><td><b>Composite score</b></td><td>The headline number, with <code>(Xw / Yp)</code> = X verified <b>w</b>eb + Y verified <b>p</b>ubmed sources. Expand it for the weight/norm/contribution breakdown and evidence quotes.</td></tr>
+    <tr><td><b>Latest</b></td><td>Most recent year with verified PubMed output.</td></tr>
+    <tr><td><b>Themes</b></td><td>The doctor's top verified sub-topics.</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h2><span class="n">How</span> tiers are divided</h2>
+<p>Tiers are simply <b>bands of the composite-score distribution</b> across the ranked KOLs (config <code>tier_a_percentile = 85</code>, <code>tier_b_percentile = 60</code>):</p>
+<ul>
+  <li><span class="pill a">A</span> — score in roughly the <b>top 15%</b> of the pool (at/above the 85th percentile).</li>
+  <li><span class="pill b">B</span> — score between roughly the <b>60th and 85th percentile</b> (the next ~25%).</li>
+  <li><span class="pill c">C</span> — everyone else with verified evidence (the bottom ~60%).</li>
+</ul>
+<p class="muted" style="font-size:13px">Tiers are relative to this run's KOL pool, not fixed thresholds. Doctors with <b>zero</b> verified sources are dropped before tiering — they never appear.</p>
+
+<h2><span class="n">How</span> rising stars are calculated</h2>
+<p>A doctor gets the <span class="pill rise">Rising</span> flag from their <b>verified-relevant PubMed activity by year</b> (never from unverified keyword counts, so an off-topic publication burst can't crown anyone). Splitting their verified articles into <b>recent</b> (the two most recent years) vs. <b>prior</b> (everything earlier), a doctor is Rising if <em>either</em>:</p>
+<ul>
+  <li><b>New voice</b> — ≥ <code>rising_star_min_pubs</code> (default 3) recent verified articles and <b>zero</b> prior ones (they appeared from nowhere), <em>or</em></li>
+  <li><b>Accelerating</b> — recent output is at least <code>rising_star_growth</code>× (default 3×) their prior output, and recent ≥ 3.</li>
+</ul>
+<p>Each rising-star card shows a <b>pubs-per-year sparkline</b>, the <b>recent vs. prior</b> counts, and the growth multiple (or "New voice").</p>
+<div class="warn" style="background:var(--accent-bg);border-left-color:var(--accent)">
+  <b style="color:var(--accent)">Note on the bar charts / sparklines.</b> Bar height = <b>CF-flag count</b> — i.e. keyword-level publication activity over 20 years, <em>unverified</em>. It's there to show a long trend. Only the most-recent verified articles feed the score, tiers and the Rising flag. So a tall old bar with no recent verified output will <em>not</em> make a doctor a KOL.
+</div>
+
+<h2><span class="n">Thematic</span> distribution (heatmap)</h2>
+<p>Rows are KOLs, columns are the indication's sub-topics (PCA terms). A cell's <b>shading</b> shows how concentrated that KOL's <b>verified claims</b> are on that theme, <em>relative to the other KOLs in the column</em> — darker = more verified claims on that theme. Empty cell = no verified claim on that theme. It answers "what is each KOL actually known for within the indication?"</p>
+
+<h2><span class="n">Regional</span> distribution</h2>
+<p>A ranked bar per city, segmented by tier colour (<span class="swatch" style="background:var(--emerald)"></span>A <span class="swatch" style="background:var(--accent)"></span>B <span class="swatch" style="background:var(--muted)"></span>C). Bar length reflects the number of KOLs in that city. Useful for territory planning — where the opinion leaders physically cluster.</p>
+
+<h2><span class="n">Collaboration</span> network</h2>
+<p>An interactive, force-directed graph of who publishes with whom, built from PubMed co-authorship on <b>verified-relevant</b> articles.</p>
+<ul>
+  <li><b><span class="swatch" style="background:var(--accent)"></span>Blue nodes = KOLs</b>, sized by <b>reach</b> (their distinct-co-author count) — bigger = more collaborators.</li>
+  <li><b><span class="swatch" style="background:var(--violet)"></span>Purple nodes = external co-authors</b> — frequently-shared collaborators who aren't themselves in the KOL list (e.g. doctors outside our targeting).</li>
+  <li><b>Lines = shared PubMed papers.</b> Thicker line + a number label = more shared papers. A <b>dashed</b> line means the partner is an external co-author.</li>
+  <li>Only <b>connected</b> KOLs appear on the graph (no lonely dots). <b>Scroll to zoom, drag to pan</b>, hover a node for its institutions or an edge for the shared-paper count.</li>
+</ul>
+<p class="muted" style="font-size:13px">Two tables below the graph list every edge: PubMed co-authorships and web co-mentions (doctors named alongside each other in verified web statements).</p>
+
+<h2><span class="n">Individual</span> KOL profiles</h2>
+<p>One card per top KOL: tier + rising badges, composite score and verified-source counts, a 20-year publication sparkline, verified <b>themes</b>, up to three real <b>verbatim quotes</b> (colour-coded by sentiment, each linking to its source), and the same expandable weight/norm/contribution breakdown. Every claim on a card is one that survived grounding <em>and</em> adversarial verification — nothing is paraphrased or invented.</p>
+
+<h2><span class="n">The</span> Excel export</h2>
+<p>Alongside the HTML, one <code>.xlsx</code> row per KOL carries the same data for analysts: rank, name, specialty, city, tier, rising flag, composite score, verified counts (web / pubmed), latest year, top themes, a representative quote + URL, and the raw scoring internals — <code>norm_relevance / norm_reach / norm_ratio</code>, the three <code>contribution_*</code> values, <code>distinct_coauthors</code>, <code>distinct_affiliations</code> and <code>relevance_ratio</code>.</p>
+
+<h2><span class="n">Questions</span> you should be able to answer</h2>
+<div class="faq">
+  <details>
+    <summary>How was the vector search done?</summary>
+    <p>At Stage 01, the indication name and its PCA terms are converted into a 768-number "meaning vector" by a local ONNX embedding model (GTE multilingual, run in-process — no external API). Each candidate web page already has a stored embedding in <code>WEBSITES_VERTICAL_EMBEDDINGS_512</code>. We compute cosine similarity between the query vector and each page; a page becomes a candidate if similarity ≥ 0.55 (<code>vector_sim_threshold</code>), keeping the top 20 per doctor (<code>vector_top_k_per_hcp</code>), still gated by <code>NEAR_BY</code>/<code>IS_DOCTOR</code>. These vector candidates are <b>added to</b> the keyword candidates — a union, not a replacement.</p>
+  </details>
+  <details>
+    <summary>Can the vector search inflate someone's score?</summary>
+    <p>No. The vector arm only widens <b>recall</b> — who gets a chance to be verified. Every candidate it surfaces still has to pass the Stage 03 LLM ground-then-verify pass, which is the <b>sole</b> arbiter of what counts as relevant. A wider net can only let a genuine-but-keyword-invisible doctor earn a score; it cannot manufacture one.</p>
+  </details>
+  <details>
+    <summary>What makes one doctor rank above another?</summary>
+    <p>The composite score. In practice, verified relevance dominates (60% weight), so the doctor with more LLM-verified on-topic sources usually wins; reach (co-author breadth, 25%) and focus ratio (15%) break near-ties and reward broad, topic-specialist doctors. Open any row's breakdown to see the exact per-factor contributions.</p>
+  </details>
+  <details>
+    <summary>Why isn't specialty used to filter?</summary>
+    <p>Because hardcoding specialty exclusions is how v1 went wrong in the other direction and is brittle. Instead, relevance verification does the filtering: an off-target specialist simply won't accumulate verified on-topic sources and falls out during the 75→25 buffer. Specialty is displayed for context only.</p>
+  </details>
+  <details>
+    <summary>Why are web sources not date-filtered like PubMed?</summary>
+    <p>Web records in <code>LLM_VALIDATION</code> are timestamp-free; the only freshness signal is <code>IS_OLD=0</code>, which we apply. PubMed articles do have years, so we window them (5 years) and can pin them to a past anchor year for backtesting. In a backtest run, web sources are shown as-is (frozen across years) and the report flags this.</p>
+  </details>
+  <details>
+    <summary>How do we know the ranking is any good, with no "correct answer" to compare to?</summary>
+    <p>Via the Stage 06 backtest. We run the pipeline pinned to a past year and again on the latest data, then check whether the doctors we'd have flagged as rising stars back then actually became today's KOLs. Promotions, tier moves and new KOLs are written to <code>backtest_compare.json</code>.</p>
+  </details>
+  <details>
+    <summary>Where do the verbatim quotes come from — could they be made up?</summary>
+    <p>No. Each quote is extracted by the ingest LLM, then <b>grounded</b> — it must appear as a literal substring of the actual source text, or it's dropped before any further processing — and then the claim is adversarially verified by a second model. Only quotes that survive both appear in the report, each linked to its source.</p>
+  </details>
+</div>
+
+<div class="card final" style="margin-top:20px">
+  <h3>The one-line summary</h3>
+  <p style="margin-bottom:0">A KOL's position is <b>earned, one verified source at a time</b>, then fine-tuned by how widely they collaborate and how focused they are — every number in the report traces back to specific evidence you can click through to.</p>
+</div>
+
+</section>
+
 <footer>
-  Pipeline overview for Service 2.1 — KOL Identification &amp; Mapping. Design spec: <code>docs/superpowers/specs/2026-07-09-kol-identification-v2-design.md</code>. Grounding model reused from Service 1.2: cheap SQL gate → shortlist → LLM-wiki (ingest → ground → verify → map). KOL score = count of genuinely-relevant sources.
+  Pipeline &amp; report guide for Service 2.1 — KOL Identification &amp; Mapping. Scoring model: composite of relevance + co-author reach + relevance ratio, all downstream of the LLM ground→verify pass. Specs: <code>docs/superpowers/specs/2026-07-13-kol-scoring-model-design.md</code> (current scoring) and <code>2026-07-09-kol-identification-v2-design.md</code> (funnel). KOL score = weighted, normalised blend on top of genuinely-relevant sources.
 </footer>
 
 </div>
+
+<script>
+function showMain(id, btn){
+  var ps = document.querySelectorAll('.tabpanel');
+  for (var i = 0; i < ps.length; i++){ ps[i].classList.toggle('active', ps[i].id === id); }
+  var bs = document.querySelectorAll('.maintab');
+  for (var j = 0; j < bs.length; j++){ bs[j].classList.remove('active'); }
+  if (btn){ btn.classList.add('active'); }
+  window.scrollTo(0, 0);
+  return false;
+}
+document.addEventListener('DOMContentLoaded', function(){
+  document.body.classList.add('js-tabs');
+});
+</script>
 </body>
 </html>

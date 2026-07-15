@@ -558,7 +558,7 @@ def build_report_html(data, weights=None, as_of_year_cfg="latest"):
     css = f"""
       body{{margin:0;background:{PALETTE['bg']};color:{PALETTE['ink']};
         font:15px/1.55 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif}}
-      .wrap{{max-width:1360px;margin:0 auto;padding:28px 34px 64px}}
+      .wrap{{max-width:1800px;margin:0 auto;padding:28px 12px 64px}}
       h1{{margin:4px 0}} h2{{border-top:1px solid {PALETTE['line']};padding-top:14px;margin-top:34px}}
       table{{border-collapse:collapse;width:100%;font-size:13px;margin:10px 0}}
       th,td{{border:1px solid {PALETTE['line']};padding:7px 10px;text-align:left;vertical-align:top}}
@@ -688,10 +688,13 @@ def build_report_html(data, weights=None, as_of_year_cfg="latest"):
         "co-authors they have) or a frequently-shared external co-author (purple); each line is "
         "shared PubMed authorship, thicker and labelled with the number of shared papers, dashed "
         "when the co-author is external. Only connected KOLs appear here. The tables below list every edge.")
+    # OVERVIEW is a single panel: the stat cards sat alone in a one-row dashboard with
+    # the rest of the space empty, so the KOL ranking is folded in beneath them.
+    overview_panel = (f'<h2>Executive dashboard</h2>{render_stat_cards(data)}'
+                      f'{kol_ranking_section}')
     groups = [
         ("OVERVIEW", [
-            ("Executive Dashboard", f'<h2>Executive dashboard</h2>{render_stat_cards(data)}'),
-            ("KOL Ranking", kol_ranking_section),
+            ("Executive Dashboard", overview_panel),
         ]),
         ("ANALYSIS", [
             ("Rising Stars", rising_section),
@@ -754,7 +757,7 @@ def main():
                "reach": float(sc.get("weight_reach", DEFAULT_WEIGHTS["reach"])),
                "ratio": float(sc.get("weight_ratio", DEFAULT_WEIGHTS["ratio"]))}
     as_of_year_cfg = cfg["funnel"].get("as_of_year", "latest") if cfg.has_section("funnel") else "latest"
-    with open(os.path.join(_DIR, "data", "kol_final.json"), encoding="utf-8") as f:
+    with open(os.path.join(_DIR, "data", "kol_final_latest.json"), encoding="utf-8") as f:
         data = json.load(f)
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     html_path = os.path.join(_DIR, "results", f"kol_report_{ts}.html")

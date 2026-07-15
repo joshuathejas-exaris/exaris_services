@@ -29,6 +29,14 @@ fi
 
 echo "Setting up tmux session for a_comp_hcp_communication..."
 
+# Don't clobber a session that's already running (would kill live agents).
+if tmux has-session -t agents 2>/dev/null; then
+  echo "A tmux session 'agents' already exists — leaving it untouched."
+  echo "Attach with:        tmux attach -t agents"
+  echo "To rebuild fresh:   tmux kill-session -t agents && bash setup.sh"
+  exit 0
+fi
+
 # Create session with 5 named windows — one per agent
 tmux new-session -d -s agents -n "stage-01-competitors"
 tmux new-window  -t agents -n "stage-02-corpus"
@@ -36,15 +44,16 @@ tmux new-window  -t agents -n "stage-03-wiki"
 tmux new-window  -t agents -n "stage-04-sentiment"
 tmux new-window  -t agents -n "stage-05-reviewer"
 
-# Send initial cd + venv activation to each window
+# cd + venv activation + auto-launch claude in each window
 for window in stage-01-competitors stage-02-corpus stage-03-wiki stage-04-sentiment stage-05-reviewer; do
-  tmux send-keys -t "agents:$window" "cd $SVC_DIR && source $VENV_DIR/bin/activate" Enter
+  tmux send-keys -t "agents:$window" "cd $SVC_DIR && source $VENV_DIR/bin/activate && claude" Enter
 done
 
 echo ""
-echo "Done. Attach with:  tmux attach -t agents"
-echo "Switch windows:     Ctrl+b then w  (window list)"
-echo "                    Ctrl+b then n  (next window)"
+echo "Done. claude is auto-launching in all 5 windows."
+echo "Attach with:        tmux attach -t agents"
+echo "Switch windows:     Ctrl+b then w   (window list)"
+echo "                    Ctrl+b then 0-4 (jump to a window)"
 echo ""
-echo "In each window, run:  claude"
-echo "Then paste the agent prompt from a_comp_hcp_communication/CLAUDE.md"
+echo "In each window, paste that stage's agent prompt from"
+echo "a_comp_hcp_communication/CLAUDE.md (prompts now use the correct paths)."
