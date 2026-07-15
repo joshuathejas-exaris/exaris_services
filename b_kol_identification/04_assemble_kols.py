@@ -240,12 +240,12 @@ def compute_tenure(verified_pubmed_years: dict, anchor_year: int) -> dict:
 def passes_kol_floors(hcp: dict, anchor_year: int, min_verified: int, min_ratio: float,
                       active_within_yrs: int, min_coauthors: int) -> bool:
     """Absolute engagement floors that give 'KOL' meaning independent of the pool.
-    All must hold. The co-author floor is waived for HCPs with no PubMed activity."""
-    # verified floor — waived for web-only HCPs (no PubMed activity)
-    if hcp.get("verified_pubmed_count", 0) > 0:
-        verified = hcp.get("verified_web_count", 0) + hcp.get("verified_pubmed_count", 0)
-        if verified < min_verified:
-            return False
+    All must hold. Only the co-author reach floor is waived for HCPs with no PubMed
+    activity — min-verified applies to everyone, including web-only HCPs."""
+    # verified floor — applies to every HCP, web-only included
+    verified = hcp.get("verified_web_count", 0) + hcp.get("verified_pubmed_count", 0)
+    if verified < min_verified:
+        return False
     r = hcp.get("ratio", {})
     if r.get("neutral") or float(r.get("ratio", 0.0)) < min_ratio:
         return False

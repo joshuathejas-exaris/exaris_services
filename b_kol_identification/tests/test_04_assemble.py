@@ -200,17 +200,25 @@ def test_kol_floors_fail_neutral_thin_ratio():
                                  2018, 5, 0.10, 5, 3) is False
 
 def test_kol_floors_fail_inactive():
-    # last verified year 2010, anchor 2018, window 5 -> no recent pubmed, no web -> inactive
-    assert mod.passes_kol_floors(_floored_hcp(verified_web_count=0,
-                                 verified_pubmed_years={"2010": 3}),
-                                 2018, 5, 0.10, 5, 3) is False
+    # passes min-verified (5 pubmed, 0 web) and reach, but last verified year 2010,
+    # anchor 2018, window 5 -> no recent pubmed, no web -> isolates the recency floor
+    h = _floored_hcp(verified_web_count=0, verified_pubmed_count=5,
+                     verified_pubmed_years={"2010": 5})
+    assert mod.passes_kol_floors(h, 2018, 5, 0.10, 5, 3) is False
 
 def test_kol_floors_recent_activity_satisfied_by_web():
-    # no pubmed years at all but has web sources (timestamp-free -> treated as current)
-    h = _floored_hcp(verified_pubmed_count=0, verified_pubmed_years={},
-                     reach={"distinct_coauthors": 0})
+    # no pubmed years at all but has enough web sources alone to clear min-verified
+    # (timestamp-free web -> treated as current)
+    h = _floored_hcp(verified_web_count=5, verified_pubmed_count=0,
+                     verified_pubmed_years={}, reach={"distinct_coauthors": 0})
     assert mod.passes_kol_floors(h, 2018, 5, 0.10, 5, 3) is True   # coauthor floor waived, active via web
 
 def test_kol_floors_coauthor_floor_applies_with_pubmed():
     assert mod.passes_kol_floors(_floored_hcp(reach={"distinct_coauthors": 1}),
                                  2018, 5, 0.10, 5, 3) is False
+
+def test_kol_floors_fail_web_only_too_few_sources():
+    # web-only HCP is NOT exempt from min-verified: 2 web sources < min_verified 5
+    h = _floored_hcp(verified_web_count=2, verified_pubmed_count=0,
+                     verified_pubmed_years={}, reach={"distinct_coauthors": 0})
+    assert mod.passes_kol_floors(h, 2018, 5, 0.10, 5, 3) is False
