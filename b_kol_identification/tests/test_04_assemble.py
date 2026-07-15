@@ -176,3 +176,41 @@ def test_compute_tenure_span_from_first_verified_year():
 def test_compute_tenure_none_when_no_pubmed_years():
     t = mod.compute_tenure({}, anchor_year=2018)
     assert t["relevant_tenure"] is None and t["first_relevant_year"] is None
+
+
+def _floored_hcp(**kw):
+    base = {"verified_web_count": 3, "verified_pubmed_count": 3,
+            "ratio": {"ratio": 0.5, "neutral": False},
+            "verified_pubmed_years": {"2018": 3}, "reach": {"distinct_coauthors": 5}}
+    base.update(kw); return base
+
+def test_kol_floors_pass_when_all_met():
+    assert mod.passes_kol_floors(_floored_hcp(), 2018, 5, 0.10, 5, 3) is True
+
+def test_kol_floors_fail_min_verified():
+    assert mod.passes_kol_floors(_floored_hcp(verified_web_count=1, verified_pubmed_count=1),
+                                 2018, 5, 0.10, 5, 3) is False
+
+def test_kol_floors_fail_low_ratio():
+    assert mod.passes_kol_floors(_floored_hcp(ratio={"ratio": 0.05, "neutral": False}),
+                                 2018, 5, 0.10, 5, 3) is False
+
+def test_kol_floors_fail_neutral_thin_ratio():
+    assert mod.passes_kol_floors(_floored_hcp(ratio={"ratio": 0.0, "neutral": True}),
+                                 2018, 5, 0.10, 5, 3) is False
+
+def test_kol_floors_fail_inactive():
+    # last verified year 2010, anchor 2018, window 5 -> no recent pubmed, no web -> inactive
+    assert mod.passes_kol_floors(_floored_hcp(verified_web_count=0,
+                                 verified_pubmed_years={"2010": 3}),
+                                 2018, 5, 0.10, 5, 3) is False
+
+def test_kol_floors_recent_activity_satisfied_by_web():
+    # no pubmed years at all but has web sources (timestamp-free -> treated as current)
+    h = _floored_hcp(verified_pubmed_count=0, verified_pubmed_years={},
+                     reach={"distinct_coauthors": 0})
+    assert mod.passes_kol_floors(h, 2018, 5, 0.10, 5, 3) is True   # coauthor floor waived, active via web
+
+def test_kol_floors_coauthor_floor_applies_with_pubmed():
+    assert mod.passes_kol_floors(_floored_hcp(reach={"distinct_coauthors": 1}),
+                                 2018, 5, 0.10, 5, 3) is False

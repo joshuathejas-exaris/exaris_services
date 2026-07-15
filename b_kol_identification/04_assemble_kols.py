@@ -237,6 +237,31 @@ def compute_tenure(verified_pubmed_years: dict, anchor_year: int) -> dict:
     return {"relevant_tenure": int(anchor_year) - first + 1, "first_relevant_year": first}
 
 
+def passes_kol_floors(hcp: dict, anchor_year: int, min_verified: int, min_ratio: float,
+                      active_within_yrs: int, min_coauthors: int) -> bool:
+    """Absolute engagement floors that give 'KOL' meaning independent of the pool.
+    All must hold. The co-author floor is waived for HCPs with no PubMed activity."""
+    # verified floor — waived for web-only HCPs (no PubMed activity)
+    if hcp.get("verified_pubmed_count", 0) > 0:
+        verified = hcp.get("verified_web_count", 0) + hcp.get("verified_pubmed_count", 0)
+        if verified < min_verified:
+            return False
+    r = hcp.get("ratio", {})
+    if r.get("neutral") or float(r.get("ratio", 0.0)) < min_ratio:
+        return False
+    # recent activity: any web source (timestamp-free, treated as current) OR a recent pub
+    has_web = hcp.get("verified_web_count", 0) > 0
+    years = [int(y) for y in hcp.get("verified_pubmed_years", {}).keys() if str(y).isdigit()]
+    recent_pub = any(y >= int(anchor_year) - int(active_within_yrs) for y in years)
+    if not (has_web or recent_pub):
+        return False
+    # co-author reach floor — waived if the HCP has no PubMed at all
+    if hcp.get("verified_pubmed_count", 0) > 0:
+        if hcp.get("reach", {}).get("distinct_coauthors", 0) < min_coauthors:
+            return False
+    return True
+
+
 def build_comention_edges(hcps: list) -> list:
     edges = []
     for h in hcps:
