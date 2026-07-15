@@ -281,6 +281,39 @@ def render_sparkline(pub_by_year, all_years, width=80, height=24):
     return f'<svg width="{width}" height="{height}" viewBox="0 0 {width} {height}">{"".join(bars)}</svg>'
 
 
+def render_year_bars(total_by_year, relevant_by_year, all_years, width=190, height=44):
+    """Grouped per-year bars: light column = all publications that year, dark inner
+    column = the verified-relevant subset. Inline SVG (no CDN)."""
+    tot = {str(y): int(v) for y, v in (total_by_year or {}).items()}
+    rel = {str(y): int(v) for y, v in (relevant_by_year or {}).items()}
+    if not tot and not rel:
+        return ""
+    years = list(all_years)
+    peak = max([tot.get(y, 0) for y in years] + [rel.get(y, 0) for y in years] + [1])
+    n = max(len(years), 1)
+    bw = width / n
+    pad = bw * 0.2
+    base = height - 12
+    rects, labels = [], []
+    for i, y in enumerate(years):
+        x = i * bw + pad
+        w = bw - 2 * pad
+        th = (tot.get(y, 0) / peak) * base
+        rh = (rel.get(y, 0) / peak) * base
+        if tot.get(y, 0):
+            rects.append(f'<rect x="{x:.1f}" y="{base - th:.1f}" width="{w:.1f}" '
+                         f'height="{th:.1f}" fill="{PALETTE["line"]}"/>')
+        if rel.get(y, 0):
+            rects.append(f'<rect x="{x:.1f}" y="{base - rh:.1f}" width="{w:.1f}" '
+                         f'height="{rh:.1f}" fill="{PALETTE["accent"]}"/>')
+        if y.endswith("0") or y.endswith("5"):
+            labels.append(f'<text x="{x + w/2:.1f}" y="{height - 1}" font-size="7" '
+                          f'text-anchor="middle" fill="{PALETTE["muted"]}">{y[2:]}</text>')
+    return (f'<svg width="{width}" height="{height}" viewBox="0 0 {width} {height}" '
+            f'role="img" aria-label="publications per year, total vs relevant">'
+            f'{"".join(rects)}{"".join(labels)}</svg>')
+
+
 def render_rising_stars(hcps, all_years):
     stars = [h for h in hcps if h.get("rising_star")]
     if not stars:

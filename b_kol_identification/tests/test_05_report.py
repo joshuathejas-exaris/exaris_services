@@ -241,3 +241,15 @@ def test_network_node_falls_back_to_city_without_affiliations():
     html = mod.build_report_html(data)
     assert "Anna Berg — Berlin · reach 0</title>" in html
     assert 'data-aff="Berlin"' in html
+
+
+# ── Task 11: stacked total-vs-relevant per-year bars ────────────────────────
+
+def test_render_year_bars_stacks_total_and_relevant():
+    svg = mod.render_year_bars({"2017": 4, "2018": 6}, {"2017": 1, "2018": 3},
+                               ["2016", "2017", "2018"])
+    assert svg.startswith("<svg") and svg.count("<rect") >= 4      # total + relevant per active year
+    assert "</svg>" in svg
+
+def test_render_year_bars_empty_when_no_data():
+    assert mod.render_year_bars({}, {}, ["2016", "2017"]) == ""
