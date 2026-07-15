@@ -341,6 +341,8 @@ def main():
     args = p.parse_args()
     cfg = configparser.ConfigParser(); cfg.read(os.path.join(_DIR, "config.ini"))
     sf, sc = cfg["snowflake"], cfg["scoring"]
+    fn = cfg["funnel"]
+    rep_n = int(cfg["report"]["top_n_report"])
     tb = resolve_tables(sf)
 
     out_path = os.path.join(_DIR, "data", "kol_final.json")
@@ -349,10 +351,10 @@ def main():
 
     with open(os.path.join(_DIR, "data", "wiki.json"), encoding="utf-8") as f:
         data = json.load(f)
+    anchor_year = int(data.get("anchor_year") or 0)
     pca_terms = data["pca_terms"]
 
     hcps = data["hcps"]
-    hcps = flag_rising_stars(hcps, int(sc["rising_star_min_pubs"]), float(sc["rising_star_growth"]))
     for h in hcps:
         h["theme_labels"] = aggregate_themes(h, pca_terms)
         h["top_quotes"] = top_quotes(h)
@@ -396,12 +398,42 @@ def main():
                "reach": float(sc["weight_reach"]),
                "ratio": float(sc["weight_ratio"])}
     hcps = apply_composite(hcps, weights, sc.get("normalization", "percentile"))
+
+    # tenure + buckets (mutually exclusive by construction)
+    hcps = flag_rising_stars(hcps, int(sc["rising_star_min_pubs"]),
+                             int(sc["rising_star_max_tenure_years"]), anchor_year)
+    for h in hcps:
+        ten = compute_tenure(h.get("verified_pubmed_years", {}), anchor_year)
+        h["relevant_tenure"] = ten["relevant_tenure"]
+        h["first_relevant_year"] = ten["first_relevant_year"]
+        h["is_kol"] = (not h["rising_star"]) and passes_kol_floors(
+            h, anchor_year, int(sc["kol_floor_min_verified"]), float(sc["kol_floor_min_ratio"]),
+            int(sc["kol_floor_active_within_yrs"]), int(sc["kol_floor_min_coauthors"]))
+
     for h in hcps:  # latest_year for sort/rising-star display
         years = [int(y) for y in h.get("verified_pubmed_years", {}).keys() if str(y).isdigit()]
         h["latest_year"] = max(years) if years else 0
     hcps.sort(key=lambda h: (h["kol_score"], h["latest_year"]), reverse=True)
     hcps = drop_zero_score(hcps)
     hcps = assign_tiers(hcps, float(sc["tier_a_percentile"]), float(sc["tier_b_percentile"]))
+
+    # score-development trajectories for the reported KOLs (fixed yardstick = final pool)
+    ref_rel = [h.get("verified_web_count", 0) + h.get("verified_pubmed_count", 0) for h in hcps]
+    ref_rch = [h.get("reach", {}).get("distinct_coauthors", 0) for h in hcps]
+    kol_scores = sorted((h["kol_score"] for h in hcps if h.get("is_kol")))
+    if kol_scores:
+        n = len(kol_scores)
+        t_a = kol_scores[min(int(n * float(sc["tier_a_percentile"]) / 100), n - 1)]
+        t_b = kol_scores[min(int(n * float(sc["tier_b_percentile"]) / 100), n - 1)]
+    else:
+        t_a = t_b = float("inf")
+    span = int(data.get("pub_history_years") or int(fn["pub_history_years"]))
+    weights = {"relevance": float(sc["weight_relevance"]), "reach": float(sc["weight_reach"]),
+               "ratio": float(sc["weight_ratio"])}
+    for h in hcps[:rep_n]:
+        h["score_trajectory"] = build_score_trajectory(
+            h, anchor_year, span, int(fn["pubmed_window_years"]), ref_rel, ref_rch,
+            weights, t_a, t_b, authors_by_pmid)
 
     # strip bulky per-claim payload from the final file (keep top_quotes + counts)
     for h in hcps:
