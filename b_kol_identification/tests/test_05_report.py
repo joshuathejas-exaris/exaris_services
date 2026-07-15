@@ -267,3 +267,19 @@ def test_render_score_dev_chart_has_bands_and_line():
 def test_render_score_dev_chart_empty_for_short_series():
     assert mod.render_score_dev_chart([], 0.8, 0.4) == ""
     assert mod.render_score_dev_chart([{"year": 2018, "score": 0.5, "tier": "C", "tenure": 1}], 0.8, 0.4) == ""
+
+
+# ── Task 13: report wiring — total pubs, career labels, disjoint counts ────────
+
+def test_career_stage_label_variants():
+    assert mod.career_stage_label({"rising_star": True, "relevant_tenure": 2}) == "Emerging (≤3y)"
+    assert mod.career_stage_label({"is_kol": True, "relevant_tenure": 9}) == "Established"
+    assert mod.career_stage_label({"relevant_tenure": None}) == "—"
+
+
+def test_established_new_to_topic_detects_veteran_pivot():
+    # publishes since 2008 (long total span) but first RELEVANT year 2017 (short tenure)
+    hcp = {"total_pub_by_year": {"2008": 2, "2012": 3, "2017": 1, "2018": 2},
+           "relevant_tenure": 2}
+    assert mod.established_new_to_topic(hcp) is True
+    assert mod.established_new_to_topic({"total_pub_by_year": {"2017": 1}, "relevant_tenure": 2}) is False

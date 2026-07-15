@@ -35,6 +35,41 @@ DEFAULT_WEIGHTS = {"relevance": 0.60, "reach": 0.25, "ratio": 0.15}
 
 RISING_MAX_TENURE_DEFAULT = 3
 
+# Fallback tier percentiles (Stage 04 config defaults) used when the caller does not
+# pass the run's actual [scoring] tier_a_percentile/tier_b_percentile through.
+DEFAULT_TIER_PCTS = (85.0, 60.0)
+
+
+def career_stage_label(hcp):
+    if hcp.get("rising_star"):
+        return "Emerging (≤3y)"
+    if hcp.get("relevant_tenure") is None:
+        return "—"
+    return "Established"
+
+
+def established_new_to_topic(hcp, min_total_span=8, max_relevant_tenure=3):
+    """Long overall publication history but only recently relevant to THIS indication."""
+    yrs = [int(y) for y in (hcp.get("total_pub_by_year") or {}).keys() if str(y).isdigit()]
+    if not yrs:
+        return False
+    total_span = max(yrs) - min(yrs) + 1
+    ten = hcp.get("relevant_tenure")
+    return total_span >= min_total_span and ten is not None and ten <= max_relevant_tenure
+
+
+def _kol_tier_thresholds(hcps, a_pct, b_pct):
+    """Composite-score A/B thresholds over the KOL pool only (is_kol==True) —
+    mirrors 04_assemble_kols.py::assign_tiers's threshold math so the score-development
+    chart's tier bands line up with an HCP's actual assigned tier."""
+    kol_scores = sorted(h.get("kol_score", 0) for h in hcps if h.get("is_kol"))
+    if not kol_scores:
+        return float("inf"), float("inf")
+    n = len(kol_scores)
+    t_a = kol_scores[min(int(n * a_pct / 100), n - 1)]
+    t_b = kol_scores[min(int(n * b_pct / 100), n - 1)]
+    return t_a, t_b
+
 
 def as_of_banner(anchor_year, as_of_year_cfg) -> str:
     if not as_of_year_cfg or str(as_of_year_cfg).strip().lower() == "latest":
@@ -241,10 +276,13 @@ def _recent_prior(pub_by_year):
 def render_stat_cards(data):
     hcps = data["hcps"]
     tiers = {t: sum(1 for h in hcps if h.get("tier") == t) for t in "ABC"}
+    # KOLs and Rising stars are disjoint buckets (Stage 04: is_kol requires NOT rising_star),
+    # so these two counts must never double-count the same HCP.
+    kols = sum(1 for h in hcps if h.get("is_kol"))
     rising = sum(1 for h in hcps if h.get("rising_star"))
     total_sources = sum(h.get("verified_web_count", 0) + h.get("verified_pubmed_count", 0) for h in hcps)
-    cards = [("KOLs", len(hcps)), ("Tier A", tiers["A"]), ("Tier B", tiers["B"]),
-             ("Tier C", tiers["C"]), ("Rising Stars", rising), ("Verified sources", total_sources)]
+    cards = [("KOLs", kols), ("Tier A", tiers["A"]), ("Tier B", tiers["B"]),
+             ("Tier C", tiers["C"]), ("Rising stars", rising), ("Verified sources", total_sources)]
     cells = "".join(
         f'<div class="stat"><div class="v">{v}</div><div class="k">{_esc(k)}</div></div>' for k, v in cards)
     return f'<div class="stats">{cells}</div>'
@@ -257,15 +295,17 @@ def render_kol_table(hcps, top_n, weights=None):
         themes = ", ".join(_esc(t["term_en"]) for t in h.get("theme_labels", [])[:3])
         badge = f'<span class="pill {h.get("tier","C").lower()}">{h.get("tier","C")}</span>'
         rising = ' <span class="pill rise">Rising</span>' if h.get("rising_star") else ""
-        rows += (f'<tr><td>{i}</td><td>{badge}{rising}</td>'
+        stage = f' <span class="pill stage">{_esc(career_stage_label(h))}</span>'
+        rows += (f'<tr><td>{i}</td><td>{badge}{rising}{stage}</td>'
                  f'<td><b>{_esc(h["name"])}</b><br><span class="muted">{_esc(h["specialty"])}</span></td>'
                  f'<td>{_esc(h["city"])}</td>'
                  f'<td><b>{h["kol_score"]:.2f}</b> '
                  f'<span class="muted">({h.get("verified_web_count",0)}w / {h.get("verified_pubmed_count",0)}p)</span>'
                  f'{render_score_breakdown(h, weights)}</td>'
+                 f'<td>{h.get("total_pubmed_sources", 0)}</td>'
                  f'<td>{h.get("latest_year","")}</td><td>{themes}</td></tr>')
     return (f'<table><thead><tr><th>#</th><th>Tier</th><th>Name / Specialty</th><th>City</th>'
-            f'<th>Composite score</th><th>Latest</th><th>Themes</th></tr></thead><tbody>{rows}</tbody></table>')
+            f'<th>Composite score</th><th>Total pubs</th><th>Latest</th><th>Themes</th></tr></thead><tbody>{rows}</tbody></table>')
 
 
 def render_sparkline(pub_by_year, all_years, width=80, height=24):
@@ -372,16 +412,37 @@ def render_rising_stars(hcps, all_years):
         ratio = f"{recent / max(prior, 1):.1f}×" if prior > 0 else "New voice"
         spark = render_sparkline(h.get("pub_by_year", {}), all_years, width=190, height=34)
         themes = "".join(f'<span class="tag">{_esc(t["term_en"])}</span>' for t in h.get("theme_labels", []))
+        breakout = ' <span class="pill breakout">Breakout</span>' if h.get("breakout") else ""
+        tenure = h.get("relevant_tenure")
+        tenure_txt = f' · {tenure}y relevant tenure' if tenure is not None else ""
         cards += (
             f'<div class="rising-card"><b>{_esc(h.get("name",""))}</b> '
-            f'<span class="pill rise">Rising</span><br>'
-            f'<span class="muted">{_esc(h.get("specialty",""))} · {_esc(h.get("city",""))}</span>'
+            f'<span class="pill rise">Rising</span>{breakout}<br>'
+            f'<span class="muted">{_esc(h.get("specialty",""))} · {_esc(h.get("city",""))}{tenure_txt}</span>'
             f'<div style="margin:.5rem 0">{spark}'
             f'<span class="muted spark-label">pubs / year</span></div>'
             f'<span class="muted"><b>{recent}</b> recent vs <b>{prior}</b> prior &middot; {ratio}</span>'
             f'<div style="margin-top:.4rem">{themes}</div></div>'
         )
     return f'<h2>Rising Stars</h2><div class="rising-grid">{cards}</div>'
+
+
+def render_established_new_callout(hcps):
+    """Callout for veteran researchers (long overall publication history) whose
+    verified engagement with THIS indication only recently began."""
+    matches = [h for h in hcps if established_new_to_topic(h)]
+    if not matches:
+        return ""
+    items = ""
+    for h in matches:
+        yrs = [int(y) for y in (h.get("total_pub_by_year") or {}).keys() if str(y).isdigit()]
+        since = min(yrs) if yrs else "?"
+        items += (f'<li><b>{_esc(h.get("name",""))}</b> — publishing since {since}, '
+                  f'only {h.get("relevant_tenure","?")}y relevant to this indication</li>')
+    return (f'<div class="callout"><h3>Established, new to this indication</h3>'
+            f'<p class="muted">Veteran researchers with a long overall publication history whose '
+            f'verified engagement with this specific indication only recently began.</p>'
+            f'<ul>{items}</ul></div>')
 
 
 def render_thematic_heatmap(hcps, pca_terms, top_n=20):
@@ -466,20 +527,24 @@ def render_network(coauthor_edges, comention_edges, hcps):
 _SENT_COLOR_KEY = {"positive": "pos", "negative": "neg"}
 
 
-def render_profiles(hcps, all_years, top_n=10, weights=None):
+def render_profiles(hcps, all_years, top_n=10, weights=None, tier_thresholds=None):
     weights = weights or DEFAULT_WEIGHTS
+    t_a, t_b = tier_thresholds or (float("inf"), float("inf"))
     year_range = f"{all_years[0]}–{all_years[-1]}" if all_years else ""
     cards = ""
     for h in hcps[:top_n]:
         tier = h.get("tier", "C")
         badge = f'<span class="pill {tier.lower()}">{tier}</span>'
         rising = ' <span class="pill rise">Rising</span>' if h.get("rising_star") else ""
-        spark = render_sparkline(h.get("pub_by_year", {}), all_years, width=190, height=34)
+        stage = f' <span class="pill stage">{_esc(career_stage_label(h))}</span>'
+        year_bars = render_year_bars(h.get("total_pub_by_year", {}), h.get("verified_pubmed_years", {}), all_years)
+        dev_chart = render_score_dev_chart(h.get("score_trajectory", []), t_a, t_b)
         themes = "".join(f'<span class="tag">{_esc(t["term_en"])}</span>' for t in h.get("theme_labels", []))
         verified_total = h.get("verified_web_count", 0) + h.get("verified_pubmed_count", 0)
         meta = (f'<div class="muted">Composite score {h.get("kol_score",0):.2f} &middot; '
                 f'{verified_total} verified sources '
                 f'({h.get("verified_web_count",0)} web / {h.get("verified_pubmed_count",0)} pubmed) '
+                f'&middot; {h.get("total_pubmed_sources",0)} total publications '
                 f'&middot; latest {h.get("latest_year","")}</div>')
         quotes = ""
         for q in h.get("top_quotes", [])[:3]:
@@ -487,15 +552,19 @@ def render_profiles(hcps, all_years, top_n=10, weights=None):
             link = (f' <a href="{_esc(q["url"])}">source</a>' if q.get("url") else "")
             quotes += (f'<div class="quote" style="border-left:3px solid {color}">'
                        f'“{_esc(q.get("quote",""))}”{link}</div>')
+        charts = (f'<div style="margin:.5rem 0">{year_bars}'
+                  f'<span class="muted spark-label">pubs/yr, total vs relevant ({year_range})</span></div>')
+        if dev_chart:
+            charts += (f'<div style="margin:.5rem 0">{dev_chart}'
+                       f'<span class="muted spark-label">score development</span></div>')
         cards += (
             f'<div class="profile-card">'
             f'<div style="display:flex;justify-content:space-between">'
             f'<div><b>{_esc(h.get("name",""))}</b><br>'
             f'<span class="muted">{_esc(h.get("specialty",""))} · {_esc(h.get("city",""))}</span></div>'
-            f'<div>{badge}{rising}</div></div>'
+            f'<div>{badge}{rising}{stage}</div></div>'
             f'{meta}'
-            f'<div style="margin:.5rem 0">{spark}'
-            f'<span class="muted spark-label">pubs/yr ({year_range})</span></div>'
+            f'{charts}'
             f'<div>{themes}</div>{quotes}{render_score_breakdown(h, weights)}</div>'
         )
     return f'<h2>Individual KOL Profiles — Top {top_n}</h2><div class="profile-grid">{cards}</div>'
@@ -629,8 +698,9 @@ def _render_sidebar(groups):
     return '<div class="layout">\n' + "\n".join(nav) + "\n" + content + "\n</div>"
 
 
-def build_report_html(data, weights=None, as_of_year_cfg="latest"):
+def build_report_html(data, weights=None, as_of_year_cfg="latest", tier_pcts=None):
     weights = weights or DEFAULT_WEIGHTS
+    tier_pcts = tier_pcts or DEFAULT_TIER_PCTS
     all_years = build_year_axis(data)
     top_n = 25
     css = f"""
@@ -648,6 +718,12 @@ def build_report_html(data, weights=None, as_of_year_cfg="latest"):
       .pill.a{{background:#e7f5ee;color:{PALETTE['tierA']}}} .pill.b{{background:#eaf0f9;color:{PALETTE['tierB']}}}
       .pill.c{{background:#eef1f5;color:{PALETTE['tierC']}}} .pill.rise{{background:#fbf1dd;color:{PALETTE['amber']}}}
       .pill.ext{{background:#efecfa;color:{PALETTE['violet']}}}
+      .pill.stage{{background:#eef2f7;color:{PALETTE['muted']}}}
+      .pill.breakout{{background:#e7f5ee;color:{PALETTE['emerald']}}}
+      .callout{{background:#fdf3e3;border:1px solid {PALETTE['amber']};border-radius:8px;
+        padding:10px 14px;margin:14px 0}}
+      .callout h3{{margin:0 0 6px;font-size:14px;color:{PALETTE['ink']}}}
+      .callout ul{{margin:6px 0 0;padding-left:18px;font-size:13px}}
       .tag{{display:inline-block;background:#eef2f7;color:{PALETTE['teal']};font-size:11px;
         padding:1px 7px;border-radius:10px;margin:2px 3px 0 0}}
       .rising-grid,.profile-grid{{display:grid;gap:12px;margin:14px 0}}
@@ -721,6 +797,9 @@ def build_report_html(data, weights=None, as_of_year_cfg="latest"):
                        "reach": h.get("reach", {}).get("distinct_coauthors", 0),
                        "affiliation": ", ".join(h.get("affiliations", [])) or h.get("city", "")} for h in top]
     banner = as_of_banner(data.get("anchor_year"), as_of_year_cfg)
+    # Score-dev chart tier bands: thresholds computed over the FULL final pool (not just
+    # the top-N sliced for the report), mirroring Stage 04's assign_tiers exactly.
+    t_a, t_b = _kol_tier_thresholds(top, tier_pcts[0], tier_pcts[1])
 
     def _splice_explainer(section_html: str, explainer_text: str) -> str:
         """Insert section_explainer(...) right after a section's leading <h2>...</h2>."""
@@ -769,7 +848,17 @@ def build_report_html(data, weights=None, as_of_year_cfg="latest"):
     # OVERVIEW is a single panel: the stat cards sat alone in a one-row dashboard with
     # the rest of the space empty, so the KOL ranking is folded in beneath them.
     overview_panel = (f'<h2>Executive dashboard</h2>{render_stat_cards(data)}'
+                      f'{render_established_new_callout(top)}'
                       f'{kol_ranking_section}')
+    profiles_section = _splice_explainer(
+        render_profiles(top, all_years, top_n=top_n, weights=weights, tier_thresholds=(t_a, t_b)),
+        "The score-development chart replays each KOL's trajectory against a fixed yardstick -- "
+        "today's final pool of KOLs is the ruler for every year shown, so the line reflects the "
+        "individual's own growth, not pool churn. Web sources are a constant baseline with no "
+        "timestamps, so they contribute the same amount to every year. Today's LLM verification "
+        "verdicts are applied back onto each historical year's PubMed record. This chart cannot "
+        "show when an HCP entered or exited the KOL pool, or was demoted -- that comparison is "
+        "what the two-run backtest (Stage 06) is for.")
     groups = [
         ("OVERVIEW", [
             ("Executive Dashboard", overview_panel),
@@ -781,7 +870,7 @@ def build_report_html(data, weights=None, as_of_year_cfg="latest"):
             ("Collaboration Network", network_section),
         ]),
         ("PROFILES", [
-            ("KOL Profiles", render_profiles(top, all_years, top_n=top_n, weights=weights)),
+            ("KOL Profiles", profiles_section),
         ]),
     ]
     header = (f'<h1>KOL Identification — {_esc(data["indication"])}</h1>'
@@ -804,7 +893,8 @@ def write_excel(data: dict, path: str) -> None:
                "Representative quote", "Source URL",
                "norm_relevance", "norm_reach", "norm_ratio",
                "contribution_relevance", "contribution_reach", "contribution_ratio",
-               "distinct_coauthors", "distinct_affiliations", "relevance_ratio"]
+               "distinct_coauthors", "distinct_affiliations", "relevance_ratio",
+               "total_publications", "relevant_tenure", "is_kol", "breakout"]
     ws.append(headers)
     for i, h in enumerate(data["hcps"], 1):
         q = (h.get("top_quotes") or [{}])[0]
@@ -821,7 +911,9 @@ def write_excel(data: dict, path: str) -> None:
                    h.get("norm_relevance", 0), h.get("norm_reach", 0), h.get("norm_ratio", 0),
                    fc.get("relevance", 0), fc.get("reach", 0), fc.get("ratio", 0),
                    reach.get("distinct_coauthors", 0), reach.get("distinct_affiliations", 0),
-                   ratio.get("ratio", 0)])
+                   ratio.get("ratio", 0),
+                   h.get("total_pubmed_sources", 0), h.get("relevant_tenure", ""),
+                   "yes" if h.get("is_kol") else "", "yes" if h.get("breakout") else ""])
     wb.save(path)
 
 
@@ -834,13 +926,15 @@ def main():
     weights = {"relevance": float(sc.get("weight_relevance", DEFAULT_WEIGHTS["relevance"])),
                "reach": float(sc.get("weight_reach", DEFAULT_WEIGHTS["reach"])),
                "ratio": float(sc.get("weight_ratio", DEFAULT_WEIGHTS["ratio"]))}
+    tier_pcts = (float(sc.get("tier_a_percentile", DEFAULT_TIER_PCTS[0])),
+                 float(sc.get("tier_b_percentile", DEFAULT_TIER_PCTS[1])))
     as_of_year_cfg = cfg["funnel"].get("as_of_year", "latest") if cfg.has_section("funnel") else "latest"
     with open(os.path.join(_DIR, "data", "kol_final_latest.json"), encoding="utf-8") as f:
         data = json.load(f)
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     html_path = os.path.join(_DIR, "results", f"kol_report_{ts}.html")
     with open(html_path, "w", encoding="utf-8") as f:
-        f.write(build_report_html(data, weights=weights, as_of_year_cfg=as_of_year_cfg))
+        f.write(build_report_html(data, weights=weights, as_of_year_cfg=as_of_year_cfg, tier_pcts=tier_pcts))
     log.info(f"Wrote {html_path}")
     xlsx_path = os.path.join(_DIR, "results", f"kol_report_{ts}.xlsx")
     write_excel(data, xlsx_path)
