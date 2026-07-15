@@ -271,10 +271,26 @@ def test_render_score_dev_chart_empty_for_short_series():
 
 # ── Task 13: report wiring — total pubs, career labels, disjoint counts ────────
 
-def test_career_stage_label_variants():
-    assert mod.career_stage_label({"rising_star": True, "relevant_tenure": 2}) == "Emerging (≤3y)"
-    assert mod.career_stage_label({"is_kol": True, "relevant_tenure": 9}) == "Established"
-    assert mod.career_stage_label({"relevant_tenure": None}) == "—"
+def test_tenure_chip_shows_years_on_topic_or_empty():
+    assert mod.tenure_chip({"relevant_tenure": 11}) == "11y on-topic"
+    assert mod.tenure_chip({"relevant_tenure": None}) == ""   # web-only KOL, no pub tenure
+    assert mod.tenure_chip({}) == ""
+
+
+def test_kol_ranking_excludes_rising_stars_but_rising_tab_includes_them():
+    # A high-scoring rising star (is_kol=False) must NOT appear in the KOL ranking table,
+    # only in the Rising Stars tab. A real KOL (is_kol=True) must appear in the ranking.
+    star = {**DATA["hcps"][0], "s_customer_id": "77", "name": "Rey Zoom",
+            "kol_score": 0.99, "tier": None, "is_kol": False, "rising_star": True,
+            "relevant_tenure": 2, "verified_pubmed_years": {"2024": 2, "2025": 1}}
+    kol = {**DATA["hcps"][0], "s_customer_id": "10", "name": "Anna Berg",
+           "is_kol": True, "rising_star": False, "tier": "A", "relevant_tenure": 9}
+    html = mod.build_report_html({**DATA, "hcps": [star, kol]})
+    # Split on the section heading (content-only); the nav uses the bare label "Rising Stars".
+    ranking = html.split("<h2>Rising Stars</h2>")[0]   # nav + overview/KOL-ranking panel
+    assert "Anna Berg" in ranking                # the KOL is in the ranking
+    assert "Rey Zoom" not in ranking             # the rising star is NOT in the ranking
+    assert "Rey Zoom" in html                    # but appears elsewhere (Rising Stars tab)
 
 
 # ── Final-review fix: tier=None (non-KOL/rising-star) must not crash rendering ──

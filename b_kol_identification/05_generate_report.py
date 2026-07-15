@@ -40,12 +40,12 @@ RISING_MAX_TENURE_DEFAULT = 3
 DEFAULT_TIER_PCTS = (85.0, 60.0)
 
 
-def career_stage_label(hcp):
-    if hcp.get("rising_star"):
-        return "Emerging (≤3y)"
-    if hcp.get("relevant_tenure") is None:
-        return "—"
-    return "Established"
+def tenure_chip(hcp):
+    """Concrete on-topic tenure for display, e.g. '11y on-topic' — the number of years
+    since the HCP's first indication-relevant publication. Empty when unknown (web-only
+    KOLs with no publication tenure)."""
+    t = hcp.get("relevant_tenure")
+    return f"{t}y on-topic" if isinstance(t, int) and t > 0 else ""
 
 
 def established_new_to_topic(hcp, min_total_span=8, max_relevant_tenure=3):
@@ -294,18 +294,18 @@ def render_kol_table(hcps, top_n, weights=None):
     for i, h in enumerate(hcps[:top_n], 1):
         themes = ", ".join(_esc(t["term_en"]) for t in h.get("theme_labels", [])[:3])
         badge = f'<span class="pill {(h.get("tier") or "none").lower()}">{h.get("tier") or "—"}</span>'
-        rising = ' <span class="pill rise">Rising</span>' if h.get("rising_star") else ""
-        stage = f' <span class="pill stage">{_esc(career_stage_label(h))}</span>'
-        rows += (f'<tr><td>{i}</td><td>{badge}{rising}{stage}</td>'
+        tc = tenure_chip(h)
+        stage = f' <span class="pill stage">{_esc(tc)}</span>' if tc else ""
+        rows += (f'<tr><td>{i}</td><td>{badge}{stage}</td>'
                  f'<td><b>{_esc(h["name"])}</b><br><span class="muted">{_esc(h["specialty"])}</span></td>'
                  f'<td>{_esc(h["city"])}</td>'
                  f'<td><b>{h["kol_score"]:.2f}</b> '
                  f'<span class="muted">({h.get("verified_web_count",0)}w / {h.get("verified_pubmed_count",0)}p)</span>'
                  f'{render_score_breakdown(h, weights)}</td>'
                  f'<td>{h.get("total_pubmed_sources", 0)}</td>'
-                 f'<td>{h.get("latest_year","")}</td><td>{themes}</td></tr>')
+                 f'<td>{themes}</td></tr>')
     return (f'<table><thead><tr><th>#</th><th>Tier</th><th>Name / Specialty</th><th>City</th>'
-            f'<th>Composite score</th><th>Total pubs</th><th>Latest</th><th>Themes</th></tr></thead><tbody>{rows}</tbody></table>')
+            f'<th>Composite score</th><th>Total pubs</th><th>Themes</th></tr></thead><tbody>{rows}</tbody></table>')
 
 
 def render_sparkline(pub_by_year, all_years, width=80, height=24):
@@ -403,28 +403,40 @@ def render_rising_stars(hcps, all_years):
     stars = [h for h in hcps if h.get("rising_star")]
     if not stars:
         return ""
-    cards = ""
-    for h in stars:
+    # Table (on top) — one row per rising star with score, tenure and momentum.
+    trows = ""
+    for i, h in enumerate(stars, 1):
         # The Rising badge (Stage 04) is computed from verified_pubmed_years, so the
         # displayed recent/prior/ratio must come from the same (verified) field -- not
         # the unverified/candidate pub_by_year -- or the numbers won't justify the badge.
         recent, prior = _recent_prior(h.get("verified_pubmed_years", {}))
         ratio = f"{recent / max(prior, 1):.1f}×" if prior > 0 else "New voice"
-        spark = render_sparkline(h.get("pub_by_year", {}), all_years, width=190, height=34)
-        themes = "".join(f'<span class="tag">{_esc(t["term_en"])}</span>' for t in h.get("theme_labels", []))
         breakout = ' <span class="pill breakout">Breakout</span>' if h.get("breakout") else ""
         tenure = h.get("relevant_tenure")
-        tenure_txt = f' · {tenure}y relevant tenure' if tenure is not None else ""
-        cards += (
-            f'<div class="rising-card"><b>{_esc(h.get("name",""))}</b> '
-            f'<span class="pill rise">Rising</span>{breakout}<br>'
-            f'<span class="muted">{_esc(h.get("specialty",""))} · {_esc(h.get("city",""))}{tenure_txt}</span>'
-            f'<div style="margin:.5rem 0">{spark}'
-            f'<span class="muted spark-label">pubs / year</span></div>'
-            f'<span class="muted"><b>{recent}</b> recent vs <b>{prior}</b> prior &middot; {ratio}</span>'
-            f'<div style="margin-top:.4rem">{themes}</div></div>'
-        )
-    return f'<h2>Rising Stars</h2><div class="rising-grid">{cards}</div>'
+        tenure_txt = f"{tenure}y on-topic" if isinstance(tenure, int) and tenure > 0 else "—"
+        themes = ", ".join(_esc(t["term_en"]) for t in h.get("theme_labels", [])[:3])
+        trows += (f'<tr><td>{i}</td>'
+                  f'<td><b>{_esc(h.get("name",""))}</b> <span class="pill rise">Rising</span>{breakout}<br>'
+                  f'<span class="muted">{_esc(h.get("specialty",""))}</span></td>'
+                  f'<td>{_esc(h.get("city",""))}</td><td>{tenure_txt}</td>'
+                  f'<td><b>{h.get("kol_score",0):.2f}</b></td>'
+                  f'<td><b>{recent}</b> recent vs <b>{prior}</b> prior &middot; {ratio}</td>'
+                  f'<td>{themes}</td></tr>')
+    table = (f'<table><thead><tr><th>#</th><th>Name / Specialty</th><th>City</th><th>Tenure</th>'
+             f'<th>Composite score</th><th>Recent vs prior (verified pubs)</th><th>Themes</th>'
+             f'</tr></thead><tbody>{trows}</tbody></table>')
+    # Publication bars (below) — total vs indication-relevant per year, same style as KOL profiles.
+    bar_cards = ""
+    for h in stars:
+        bars = render_year_bars(h.get("total_pub_by_year", {}), h.get("verified_pubmed_years", {}), all_years)
+        if not bars:
+            continue
+        bar_cards += (f'<div class="rising-card"><b>{_esc(h.get("name",""))}</b>'
+                      f'<div style="margin:.4rem 0">{bars}'
+                      f'<span class="muted spark-label">pubs/yr — total vs relevant</span></div></div>')
+    bars_block = (f'<h3>Publication trajectory — total vs indication-relevant</h3>'
+                  f'<div class="rising-grid">{bar_cards}</div>') if bar_cards else ""
+    return f'<h2>Rising Stars</h2>{table}{bars_block}'
 
 
 def render_established_new_callout(hcps):
@@ -539,8 +551,8 @@ def render_profiles(hcps, all_years, top_n=10, weights=None, tier_thresholds=Non
     for h in hcps[:top_n]:
         tier = h.get("tier") or "—"
         badge = f'<span class="pill {(h.get("tier") or "none").lower()}">{tier}</span>'
-        rising = ' <span class="pill rise">Rising</span>' if h.get("rising_star") else ""
-        stage = f' <span class="pill stage">{_esc(career_stage_label(h))}</span>'
+        tc = tenure_chip(h)
+        stage = f' <span class="pill stage">{_esc(tc)}</span>' if tc else ""
         year_bars = render_year_bars(h.get("total_pub_by_year", {}), h.get("verified_pubmed_years", {}), all_years)
         dev_chart = render_score_dev_chart(h.get("score_trajectory", []), t_a, t_b, rising_max=rising_max)
         themes = "".join(f'<span class="tag">{_esc(t["term_en"])}</span>' for t in h.get("theme_labels", []))
@@ -548,8 +560,7 @@ def render_profiles(hcps, all_years, top_n=10, weights=None, tier_thresholds=Non
         meta = (f'<div class="muted">Composite score {h.get("kol_score",0):.2f} &middot; '
                 f'{verified_total} verified sources '
                 f'({h.get("verified_web_count",0)} web / {h.get("verified_pubmed_count",0)} pubmed) '
-                f'&middot; {h.get("total_pubmed_sources",0)} total publications '
-                f'&middot; latest {h.get("latest_year","")}</div>')
+                f'&middot; {h.get("total_pubmed_sources",0)} total publications</div>')
         quotes = ""
         for q in h.get("top_quotes", [])[:3]:
             color = PALETTE[_SENT_COLOR_KEY.get(q.get("sentiment"), "neu")]
@@ -566,7 +577,7 @@ def render_profiles(hcps, all_years, top_n=10, weights=None, tier_thresholds=Non
             f'<div style="display:flex;justify-content:space-between">'
             f'<div><b>{_esc(h.get("name",""))}</b><br>'
             f'<span class="muted">{_esc(h.get("specialty",""))} · {_esc(h.get("city",""))}</span></div>'
-            f'<div>{badge}{rising}{stage}</div></div>'
+            f'<div>{badge}{stage}</div></div>'
             f'{meta}'
             f'{charts}'
             f'<div>{themes}</div>{quotes}{render_score_breakdown(h, weights)}</div>'
@@ -737,6 +748,7 @@ def build_report_html(data, weights=None, as_of_year_cfg="latest", tier_pcts=Non
       .rising-card,.profile-card{{background:{PALETTE['card']};border:1px solid {PALETTE['line']};
         border-radius:10px;padding:12px 14px}}
       .rising-card{{border-top:3px solid {PALETTE['amber']}}}
+      .rising-card svg,.profile-card svg{{max-width:100%;height:auto;display:block}}
       .spark-label{{font-size:11px;margin-left:6px}}
       .hmap-wrap{{overflow-x:auto}}
       .hmap-wrap th{{writing-mode:vertical-rl;transform:rotate(180deg);font-size:11px;
@@ -794,17 +806,21 @@ def build_report_html(data, weights=None, as_of_year_cfg="latest", tier_pcts=Non
         .layout{{flex-direction:column;gap:8px}} .sidebar{{position:static;flex-basis:auto;width:100%}}}}
     """
     top = data["hcps"]
+    # KOL-only view for the KOL sections: rising stars live exclusively in the Rising
+    # Stars tab, not the KOL ranking/profiles/heatmap/network. Fall back to the full
+    # list for old-schema data (no is_kol field) so the report is never empty.
+    kols = [h for h in top if h.get("is_kol")] or top
     # Stage 04 now threads through the HCP's actual co-author affiliation strings
     # (top_affiliations) -- real institutions, which is what conveys cross-org
     # activity on hover. Practice city is only a last-resort fallback for KOLs
     # with no PubMed co-author affiliation data at all.
     network_nodes = [{"name": h.get("name", ""),
                        "reach": h.get("reach", {}).get("distinct_coauthors", 0),
-                       "affiliation": ", ".join(h.get("affiliations", [])) or h.get("city", "")} for h in top]
+                       "affiliation": ", ".join(h.get("affiliations", [])) or h.get("city", "")} for h in kols]
     banner = as_of_banner(data.get("anchor_year"), as_of_year_cfg)
     # Score-dev chart tier bands: thresholds computed over the FULL final pool (not just
     # the top-N sliced for the report), mirroring Stage 04's assign_tiers exactly.
-    t_a, t_b = _kol_tier_thresholds(top, tier_pcts[0], tier_pcts[1])
+    t_a, t_b = _kol_tier_thresholds(kols, tier_pcts[0], tier_pcts[1])
 
     def _splice_explainer(section_html: str, explainer_text: str) -> str:
         """Insert section_explainer(...) right after a section's leading <h2>...</h2>."""
@@ -817,19 +833,25 @@ def build_report_html(data, weights=None, as_of_year_cfg="latest", tier_pcts=Non
         return section_html[:idx] + exp + section_html[idx:]
 
     kol_ranking_section = _splice_explainer(
-        f'<h2>KOL Ranking — Top {top_n}</h2>{render_kol_table(top, top_n, weights)}',
+        f'<h2>KOL Ranking — Top {top_n}</h2>{render_kol_table(kols, top_n, weights)}',
         "KOLs are ranked by a composite score that blends Relevance (LLM-verified topical "
         "engagement), Reach (co-author and institution breadth), and Ratio (the share of the "
         "KOL's total output that is on-topic); expand a row's score to see each factor's "
-        "weight and contribution.")
+        "weight and contribution. The 'Ny on-topic' tag is the KOL's tenure — the number of "
+        "years since their first indication-relevant publication. Rising stars are a separate, "
+        "mutually-exclusive bucket and are shown only in the Rising Stars tab, never here.")
     rising_section = _splice_explainer(
         render_rising_stars(top, all_years)
         or '<h2>Rising Stars</h2><p class="muted">No rising stars identified.</p>',
-        "A KOL is flagged Rising when their verified PubMed output in the most recent years "
-        "accelerates sharply versus prior years, or when they have no prior verified output "
-        "at all (a new voice).")
+        "Rising stars are a separate bucket from KOLs — climbers, not yet arrived. An HCP is a "
+        "rising star when their indication-relevant publication tenure is short (first on-topic "
+        "paper within the last few years) and they are genuinely active (enough recent verified "
+        "output). Because the buckets are mutually exclusive, no one here appears in the KOL "
+        "ranking. A 'Breakout' tag marks a rising star whose composite score already reaches "
+        "KOL Tier-A level. The bars below show each star's total vs. indication-relevant "
+        "publications per year.")
     thematic_section = _splice_explainer(
-        render_thematic_heatmap(top, data.get("pca_terms", []), top_n=top_n),
+        render_thematic_heatmap(kols, data.get("pca_terms", []), top_n=top_n),
         "Cell shading shows how concentrated a KOL's verified claims are on that theme "
         "relative to other KOLs in the top list -- darker cells mean more verified claims "
         "on that theme.")
@@ -845,7 +867,7 @@ def build_report_html(data, weights=None, as_of_year_cfg="latest", tier_pcts=Non
         f'<div class="network-svg-wrap">{render_network_svg(data.get("coauthor_edges", []), network_nodes)}'
         f'<div class="net-tooltip"></div></div>'
         f'{net_legend}'
-        f'{render_network(data["coauthor_edges"], data["comention_edges"], top)}',
+        f'{render_network(data["coauthor_edges"], data["comention_edges"], kols)}',
         "This is the co-authorship graph: each node is a KOL (blue, sized by how many distinct "
         "co-authors they have) or a frequently-shared external co-author (purple); each line is "
         "shared PubMed authorship, thicker and labelled with the number of shared papers, dashed "
@@ -853,16 +875,20 @@ def build_report_html(data, weights=None, as_of_year_cfg="latest", tier_pcts=Non
     # OVERVIEW is a single panel: the stat cards sat alone in a one-row dashboard with
     # the rest of the space empty, so the KOL ranking is folded in beneath them.
     overview_panel = (f'<h2>Executive dashboard</h2>{render_stat_cards(data)}'
-                      f'{render_established_new_callout(top)}'
+                      f'{render_established_new_callout(kols)}'
                       f'{kol_ranking_section}')
     profiles_section = _splice_explainer(
-        render_profiles(top, all_years, top_n=top_n, weights=weights, tier_thresholds=(t_a, t_b), rising_max=rising_max),
-        "The score-development chart replays each KOL's trajectory against a fixed yardstick -- "
+        render_profiles(kols, all_years, top_n=top_n, weights=weights, tier_thresholds=(t_a, t_b), rising_max=rising_max),
+        "Each card's 'Ny on-topic' tag is the KOL's tenure — years since their first "
+        "indication-relevant publication. In the score-development chart, the green / blue / grey "
+        "background bands are the Tier A / B / C score ranges, so you can watch the line climb "
+        "through the tiers over time; the dashed marker is the year the KOL crossed out of "
+        "rising-star tenure. The chart replays each KOL's trajectory against a fixed yardstick — "
         "today's final pool of KOLs is the ruler for every year shown, so the line reflects the "
         "individual's own growth, not pool churn. Web sources are a constant baseline with no "
         "timestamps, so they contribute the same amount to every year. Today's LLM verification "
         "verdicts are applied back onto each historical year's PubMed record. This chart cannot "
-        "show when an HCP entered or exited the KOL pool, or was demoted -- that comparison is "
+        "show when an HCP entered or exited the KOL pool, or was demoted — that comparison is "
         "what the two-run backtest (Stage 06) is for.")
     groups = [
         ("OVERVIEW", [
@@ -871,7 +897,7 @@ def build_report_html(data, weights=None, as_of_year_cfg="latest", tier_pcts=Non
         ("ANALYSIS", [
             ("Rising Stars", rising_section),
             ("Thematic Distribution", thematic_section),
-            ("Regional Distribution", render_regional(top)),
+            ("Regional Distribution", render_regional(kols)),
             ("Collaboration Network", network_section),
         ]),
         ("PROFILES", [

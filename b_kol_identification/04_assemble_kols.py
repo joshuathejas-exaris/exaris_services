@@ -430,7 +430,10 @@ def main():
     span = int(data.get("pub_history_years") or int(fn["pub_history_years"]))
     weights = {"relevance": float(sc["weight_relevance"]), "reach": float(sc["weight_reach"]),
                "ratio": float(sc["weight_ratio"])}
-    for h in hcps[:rep_n]:
+    # Trajectories only for the top-N KOLs shown in the report's KOL Profiles (hcps is
+    # already sorted by kol_score desc), so a KOL ranked just below a higher-scoring
+    # rising star still gets a chart. Rising stars use the per-year bars, not trajectories.
+    for h in [x for x in hcps if x.get("is_kol")][:rep_n]:
         h["score_trajectory"] = build_score_trajectory(
             h, anchor_year, span, int(fn["pubmed_window_years"]), ref_rel, ref_rch,
             weights, t_a, t_b, authors_by_pmid)
