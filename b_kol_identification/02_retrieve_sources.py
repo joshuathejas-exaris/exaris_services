@@ -101,6 +101,7 @@ def main():
         out_hcps.append({
             "s_customer_id": h["s_customer_id"], "name": h["name"], "city": h["city"],
             "specialty": h["specialty"], "rating": h["rating"], "pub_by_year": h.get("pub_by_year", {}),
+            "total_pub_by_year": h.get("total_pub_by_year", {}),
             "total_web_sources": h.get("total_web_sources", 0),
             "total_pubmed_sources": h.get("total_pubmed_sources", 0),
             "web_sources": cap_sources(web_sources, max_n),

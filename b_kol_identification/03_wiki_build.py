@@ -93,6 +93,15 @@ def source_is_relevant(claims: list) -> bool:
     return any(c.get("verified") for c in claims)
 
 
+def build_pmid_years(claims: list) -> dict:
+    """{pmid: year} for verified PubMed claims that carry a year."""
+    out = {}
+    for c in claims:
+        if c.get("kind") == "pubmed" and c.get("year"):
+            out[str(c["source_id"])] = int(c["year"])
+    return out
+
+
 def process_source(source, hcp, indication, term_list, bedrock, cfg):
     text = source["full_text"]
     ingest = call_bedrock_json(bedrock, cfg["ingest_model_id"],
@@ -164,6 +173,8 @@ def main():
         out_hcps.append({
             "s_customer_id": h["s_customer_id"], "name": h["name"], "city": h["city"],
             "specialty": h["specialty"], "rating": h["rating"], "pub_by_year": h.get("pub_by_year", {}),
+            "total_pub_by_year": h.get("total_pub_by_year", {}),
+            "verified_pmid_years": build_pmid_years(claims),
             "total_web_sources": h.get("total_web_sources", 0),
             "total_pubmed_sources": h.get("total_pubmed_sources", 0),
             "verified_web_count": len(web_ids), "verified_pubmed_count": len(pmids),

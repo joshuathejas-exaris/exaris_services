@@ -50,3 +50,12 @@ def test_process_source_end_to_end_with_mocks():
     out = mod.process_source(src, hcp, "Obesity", ["Obesity"], FakeBedrock(), cfg)
     assert out is not None and out["claims"][0]["verified"] is True
     assert out["claims"][0]["source_id"] == "w1"
+
+def test_build_pmid_years_maps_verified_pubmed_claims_only():
+    claims = [
+        {"kind": "pubmed", "source_id": "p1", "year": 2015},
+        {"kind": "pubmed", "source_id": "p2", "year": 2018},
+        {"kind": "web",    "source_id": "w1", "year": None},
+        {"kind": "pubmed", "source_id": "p3"},               # no year -> skipped
+    ]
+    assert mod.build_pmid_years(claims) == {"p1": 2015, "p2": 2018}
