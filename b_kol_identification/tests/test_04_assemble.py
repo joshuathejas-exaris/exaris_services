@@ -222,3 +222,17 @@ def test_kol_floors_fail_web_only_too_few_sources():
     h = _floored_hcp(verified_web_count=2, verified_pubmed_count=0,
                      verified_pubmed_years={}, reach={"distinct_coauthors": 0})
     assert mod.passes_kol_floors(h, 2018, 5, 0.10, 5, 3) is False
+
+def test_tiers_computed_over_kol_pool_only_and_breakout():
+    hcps = [
+        {"s_customer_id": "k1", "is_kol": True,  "rising_star": False, "kol_score": 0.9},
+        {"s_customer_id": "k2", "is_kol": True,  "rising_star": False, "kol_score": 0.5},
+        {"s_customer_id": "k3", "is_kol": True,  "rising_star": False, "kol_score": 0.1},
+        {"s_customer_id": "r1", "is_kol": False, "rising_star": True,  "kol_score": 0.95},  # breakout
+        {"s_customer_id": "r2", "is_kol": False, "rising_star": True,  "kol_score": 0.05},
+    ]
+    out = {h["s_customer_id"]: h for h in mod.assign_tiers(hcps, 85, 60)}
+    assert out["k1"]["tier"] == "A"
+    assert out["r1"]["tier"] is None            # rising stars are not tiered
+    assert out["r1"]["breakout"] is True        # would have reached tier-A level
+    assert out["r2"]["breakout"] is False

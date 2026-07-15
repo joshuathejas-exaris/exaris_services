@@ -60,14 +60,26 @@ def apply_composite(hcps: list, weights: dict, method: str) -> list:
 
 
 def assign_tiers(hcps: list, tier_a_pct: float, tier_b_pct: float) -> list:
-    if not hcps:
-        return []
-    scores = sorted(h["kol_score"] for h in hcps)
-    n = len(scores)
-    thresh_a = scores[min(int(n * tier_a_pct / 100), n - 1)]
-    thresh_b = scores[min(int(n * tier_b_pct / 100), n - 1)]
-    return [{**h, "tier": ("A" if h["kol_score"] >= thresh_a
-                           else "B" if h["kol_score"] >= thresh_b else "C")} for h in hcps]
+    """Percentile A/B/C thresholds computed over the KOL pool only (is_kol==True).
+    Non-KOLs get tier=None. Rising stars whose score clears the tier-A threshold are
+    flagged breakout (exceptional emerging voices)."""
+    kol_scores = sorted(h["kol_score"] for h in hcps if h.get("is_kol"))
+    if kol_scores:
+        n = len(kol_scores)
+        thresh_a = kol_scores[min(int(n * tier_a_pct / 100), n - 1)]
+        thresh_b = kol_scores[min(int(n * tier_b_pct / 100), n - 1)]
+    else:
+        thresh_a = thresh_b = float("inf")   # empty pool -> nobody tiers
+    out = []
+    for h in hcps:
+        if h.get("is_kol"):
+            tier = ("A" if h["kol_score"] >= thresh_a
+                    else "B" if h["kol_score"] >= thresh_b else "C")
+        else:
+            tier = None
+        breakout = bool(h.get("rising_star") and h["kol_score"] >= thresh_a)
+        out.append({**h, "tier": tier, "breakout": breakout})
+    return out
 
 
 def flag_rising_stars(hcps: list, min_pubs: int, max_tenure_years: int, anchor_year: int) -> list:
