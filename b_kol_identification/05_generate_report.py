@@ -35,6 +35,10 @@ DEFAULT_WEIGHTS = {"relevance": 0.60, "reach": 0.25, "ratio": 0.15}
 
 RISING_MAX_TENURE_DEFAULT = 3
 
+# Shared width for the two per-profile charts so their x-axes span the same length and
+# the publication bars sit directly above the matching points on the score line below.
+PROFILE_CHART_W = 320
+
 # Fallback tier percentiles (Stage 04 config defaults) used when the caller does not
 # pass the run's actual [scoring] tier_a_percentile/tier_b_percentile through.
 DEFAULT_TIER_PCTS = (85.0, 60.0)
@@ -323,25 +327,32 @@ def render_sparkline(pub_by_year, all_years, width=80, height=24):
     return f'<svg width="{width}" height="{height}" viewBox="0 0 {width} {height}">{"".join(bars)}</svg>'
 
 
-def render_year_bars(total_by_year, relevant_by_year, all_years, width=190, height=44):
+def render_year_bars(total_by_year, relevant_by_year, all_years, width=PROFILE_CHART_W, height=54):
     """Grouped per-year bars: light column = all publications that year, dark inner
-    column = the verified-relevant subset. Inline SVG (no CDN)."""
+    column = the verified-relevant subset. Drawn on an x/y axis frame, and sharing the
+    score-development chart's width + horizontal insets so the columns line up above the
+    score line. Inline SVG (no CDN)."""
     tot = {str(y): int(v) for y, v in (total_by_year or {}).items()}
     rel = {str(y): int(v) for y, v in (relevant_by_year or {}).items()}
     if not tot and not rel:
         return ""
     years = list(all_years)
     peak = max([tot.get(y, 0) for y in years] + [rel.get(y, 0) for y in years] + [1])
+    # Same horizontal insets as render_score_dev_chart (pad_l/pad_r = 6) so both charts'
+    # plotted regions start and end at the same x.
+    pad_l, pad_r, pad_t, pad_b = 6, 6, 6, 12
+    plot_w = width - pad_l - pad_r
+    base = height - pad_b
+    plot_h = base - pad_t
     n = max(len(years), 1)
-    bw = width / n
+    bw = plot_w / n
     pad = bw * 0.2
-    base = height - 12
     rects, labels = [], []
     for i, y in enumerate(years):
-        x = i * bw + pad
+        x = pad_l + i * bw + pad
         w = bw - 2 * pad
-        th = (tot.get(y, 0) / peak) * base
-        rh = (rel.get(y, 0) / peak) * base
+        th = (tot.get(y, 0) / peak) * plot_h
+        rh = (rel.get(y, 0) / peak) * plot_h
         if tot.get(y, 0):
             rects.append(f'<rect x="{x:.1f}" y="{base - th:.1f}" width="{w:.1f}" '
                          f'height="{th:.1f}" fill="{PALETTE["line"]}"/>')
@@ -351,12 +362,16 @@ def render_year_bars(total_by_year, relevant_by_year, all_years, width=190, heig
         if y.endswith("0") or y.endswith("5"):
             labels.append(f'<text x="{x + w/2:.1f}" y="{height - 1}" font-size="7" '
                           f'text-anchor="middle" fill="{PALETTE["muted"]}">{y[2:]}</text>')
+    axes = (f'<line x1="{pad_l}" y1="{pad_t}" x2="{pad_l}" y2="{base:.1f}" '
+            f'stroke="{PALETTE["muted"]}" stroke-width="1"/>'
+            f'<line x1="{pad_l}" y1="{base:.1f}" x2="{width - pad_r}" y2="{base:.1f}" '
+            f'stroke="{PALETTE["muted"]}" stroke-width="1"/>')
     return (f'<svg width="{width}" height="{height}" viewBox="0 0 {width} {height}" '
             f'role="img" aria-label="publications per year, total vs relevant">'
-            f'{"".join(rects)}{"".join(labels)}</svg>')
+            f'{axes}{"".join(rects)}{"".join(labels)}</svg>')
 
 
-def render_score_dev_chart(trajectory, thresh_a, thresh_b, width=320, height=120, rising_max=RISING_MAX_TENURE_DEFAULT):
+def render_score_dev_chart(trajectory, thresh_a, thresh_b, width=PROFILE_CHART_W, height=120, rising_max=RISING_MAX_TENURE_DEFAULT):
     """Line chart of composite score over years with A/B/C tier bands and a marker at
     the year the HCP crossed from rising-star tenure into KOL tenure. Inline SVG."""
     pts = [p for p in (trajectory or []) if isinstance(p.get("score"), (int, float))]

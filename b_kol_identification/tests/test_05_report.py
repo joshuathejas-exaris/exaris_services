@@ -301,6 +301,13 @@ def test_render_score_dev_chart_empty_for_short_series():
     assert mod.render_score_dev_chart([{"year": 2018, "score": 0.5, "tier": "C", "tenure": 1}], 0.8, 0.4) == ""
 
 
+def test_render_year_bars_has_axes_and_shared_width():
+    svg = mod.render_year_bars({"2017": 4, "2018": 6}, {"2017": 1, "2018": 3},
+                               ["2016", "2017", "2018"])
+    assert svg.count("<line") >= 2                       # x-axis + y-axis
+    assert f'width="{mod.PROFILE_CHART_W}"' in svg       # same width as the dev chart
+
+
 # ── Task 13: report wiring — total pubs, career labels, disjoint counts ────────
 
 def test_tenure_chip_shows_years_on_topic_or_empty():
