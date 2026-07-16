@@ -357,3 +357,15 @@ def test_established_new_to_topic_detects_veteran_pivot():
            "relevant_tenure": 2}
     assert mod.established_new_to_topic(hcp) is True
     assert mod.established_new_to_topic({"total_pub_by_year": {"2017": 1}, "relevant_tenure": 2}) is False
+
+
+def test_profiles_omit_score_breakdown_dropdown():
+    html = mod.render_profiles(DATA["hcps"], ["2023", "2024"], top_n=10)
+    assert "score-breakdown" not in html
+    assert "how it was scored" not in html
+
+
+def test_profiles_omit_tenure_sticker():
+    h = dict(DATA["hcps"][0]); h["relevant_tenure"] = 7
+    html = mod.render_profiles([h], ["2023", "2024"], top_n=10)
+    assert 'pill stage' not in html

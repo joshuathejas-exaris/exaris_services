@@ -565,8 +565,6 @@ def render_profiles(hcps, all_years, top_n=10, weights=None, tier_thresholds=Non
     for h in hcps[:top_n]:
         tier = h.get("tier") or "—"
         badge = f'<span class="pill {(h.get("tier") or "none").lower()}">{tier}</span>'
-        tc = tenure_chip(h)
-        stage = f' <span class="pill stage">{_esc(tc)}</span>' if tc else ""
         year_bars = render_year_bars(h.get("total_pub_by_year", {}), h.get("verified_pubmed_years", {}), all_years)
         dev_chart = render_score_dev_chart(h.get("score_trajectory", []), t_a, t_b, rising_max=rising_max)
         themes = "".join(f'<span class="tag">{_esc(t["term_en"])}</span>' for t in h.get("theme_labels", []))
@@ -591,10 +589,10 @@ def render_profiles(hcps, all_years, top_n=10, weights=None, tier_thresholds=Non
             f'<div style="display:flex;justify-content:space-between">'
             f'<div><b>{_esc(h.get("name",""))}</b><br>'
             f'<span class="muted">{_esc(h.get("specialty",""))} · {_esc(h.get("city",""))}</span></div>'
-            f'<div>{badge}{stage}</div></div>'
+            f'<div>{badge}</div></div>'
             f'{meta}'
             f'{charts}'
-            f'<div>{themes}</div>{quotes}{render_score_breakdown(h, weights)}</div>'
+            f'<div>{themes}</div>{quotes}</div>'
         )
     return f'<h2>Individual KOL Profiles — Top {top_n}</h2><div class="profile-grid">{cards}</div>'
 
