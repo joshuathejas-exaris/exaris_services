@@ -269,6 +269,7 @@ def test_score_trajectory_grows_and_marks_tenure():
     assert traj[2]["score"] >= traj[0]["score"]                        # climbs
     assert traj[0]["tenure"] == 1 and traj[2]["tenure"] == 3
 
+
 def test_trajectory_targets_includes_all_kols_and_rising_stars():
     hcps = [{"name": "K", "is_kol": True, "rising_star": False},
             {"name": "R", "is_kol": False, "rising_star": True},

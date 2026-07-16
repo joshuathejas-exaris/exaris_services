@@ -573,7 +573,6 @@ _SENT_COLOR_KEY = {"positive": "pos", "negative": "neg"}
 
 
 def render_profiles(hcps, all_years, top_n=10, weights=None, tier_thresholds=None, rising_max=RISING_MAX_TENURE_DEFAULT):
-    weights = weights or DEFAULT_WEIGHTS
     t_a, t_b = tier_thresholds or (float("inf"), float("inf"))
     year_range = f"{all_years[0]}–{all_years[-1]}" if all_years else ""
     cards = ""
@@ -967,6 +966,8 @@ def build_wiki_verdict_rows(hcps, sources_data, wiki_data):
     for wh in (wiki_data or {}).get("hcps", []):
         by_src = {}
         for c in wh.get("claims", []):
+            if not c.get("verified", True):   # wiki.json holds verified claims today; guard future output
+                continue
             by_src.setdefault(str(c.get("source_id")), []).append(c)
         claims_by_hcp[wh.get("s_customer_id")] = by_src
     rows = []
