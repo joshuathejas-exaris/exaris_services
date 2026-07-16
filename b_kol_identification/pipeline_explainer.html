@@ -180,15 +180,15 @@
 <div class="funnel">
   <div class="fstep fw1"><b>ALL doctors (~1,176)</b><small>Stage 01 · cheap SQL + a local embedding call, no LLM · count candidate web + PubMed sources per doctor</small></div>
   <div class="farrow">▼</div>
-  <div class="fstep fw2"><b>Top ~75 candidates</b><small>ranked by candidate-source count (an upper bound on the real score) · everyone else dropped before any LLM spend</small></div>
+  <div class="fstep fw2"><b>Top 100 candidates</b><small>ranked by candidate-source count (an upper bound on the real score) · everyone else dropped before any LLM spend</small></div>
   <div class="farrow">▼</div>
-  <div class="fstep fw3"><b>Fetch full text</b><small>Stage 02 · web CONTENT + PubMed title/abstract for the 75</small></div>
+  <div class="fstep fw3"><b>Fetch full text</b><small>Stage 02 · web CONTENT + PubMed title/abstract for the 100</small></div>
   <div class="farrow">▼</div>
   <div class="fstep fw4"><b>LLM verifies</b><small>Stage 03 · ingest → ground → verify · a source counts only if a claim survives both checks</small></div>
   <div class="farrow">▼</div>
-  <div class="fstep fw5"><b>Top 25 KOLs</b><small>Stages 04–05 · composite score → tiers → report</small></div>
+  <div class="fstep fw5"><b>KOLs &amp; Rising Stars</b><small>Stage 04 · composite score → tenure buckets + absolute floors → tiers · Stage 05 reports the top 25</small></div>
 </div>
-<p class="muted" style="font-size:13.5px">The 75 → 25 buffer absorbs candidates that <em>look</em> strong on cheap counts but collapse under verification — exactly the off-target-specialty problem. They simply fall out; a genuine doctor takes the slot. <b>No hardcoded specialty exclusions</b> — relevance verification does the filtering.</p>
+<p class="muted" style="font-size:13.5px">The 100 → 25 buffer absorbs candidates that <em>look</em> strong on cheap counts but collapse under verification — exactly the off-target-specialty problem. They simply fall out; a genuine doctor takes the slot. <b>No hardcoded specialty exclusions</b> — relevance verification does the filtering. (The 100 is <code>top_n_candidates</code>, set manually today — see <b>Open questions</b> at the end of this tab.)</p>
 
 <h2><span class="n">Two</span> evidence tracks</h2>
 <p>Every source is one of two kinds. Both feed the same score in the end, but they are gathered and verified slightly differently:</p>
@@ -231,9 +231,9 @@
         <ul style="margin-top:4px">
           <li>Load the indication's terms — <code>CONTENT_FRAME_SPEC</code> where <code>PCA='X'</code>.</li>
           <li><b>Web candidates</b> per doctor: keyword gate <b>∪</b> vector-recall arm (see the hybrid box above), merged into one candidate set + a count.</li>
-          <li><b>PubMed candidates</b> per doctor: verified authorship (<code>MERGE_RESULT&gt;1</code>) ∩ a topical CF-flag, within a <b>5-year window</b> (<code>pubmed_window_years</code>), CF-treffer-weighted. The window is anchored on the <b>anchor year</b> (see below), not today's date.</li>
-          <li><b>Publication-history bars (display only):</b> a separate query counts each doctor's CF-flagged PubMed articles per year over <b>20 years</b> (<code>pub_history_years</code>). These drive the report's bar charts only — they are <em>never</em> sent to the LLM and never affect the score.</li>
-          <li><b>Shortlist:</b> <code>candidate_score = web_candidate_count + pubmed_candidate_count</code> (an upper bound on the final verified relevance) → flag the top <b>~75</b> as <code>shortlisted</code>. Metadata (name, city, specialty, A/B/C/D rating) is attached; <b>specialty is displayed, never used to filter</b>. Also builds a per-doctor total-source count used later as the "focus ratio" denominator.</li>
+          <li><b>PubMed candidates</b> per doctor: verified authorship (<code>MERGE_RESULT&gt;1</code>) ∩ a topical CF-flag, within a <b>10-year window</b> (<code>pubmed_window_years</code>), CF-treffer-weighted. The window is anchored on the <b>anchor year</b> (see below), not today's date.</li>
+          <li><b>Publication-history bars (display only):</b> two separate queries count each doctor's PubMed articles per year over <b>10 years</b> (<code>pub_history_years</code>): one keeps the CF/topic filter (the indication-relevant subset), the other <em>removes</em> it (<code>total_pub_by_year</code> = the doctor's total output per year). Together they drive the report's <b>total-vs-relevant bar chart</b> and Stage 04's score-development reconstruction — they are <em>never</em> sent to the LLM and never affect the score.</li>
+          <li><b>Shortlist:</b> <code>candidate_score = web_candidate_count + pubmed_candidate_count</code> (an upper bound on the final verified relevance) → flag the top <b>100</b> (<code>top_n_candidates</code>) as <code>shortlisted</code>. Metadata (name, city, specialty, A/B/C/D rating) is attached; <b>specialty is displayed, never used to filter</b>. Also builds a per-doctor total-source count used later as the "focus ratio" denominator.</li>
         </ul>
       </div>
       <div class="meta">
@@ -256,7 +256,7 @@
       <h3>Retrieve source text</h3>
       <div class="file">02_retrieve_sources.py</div>
       <div class="kv">
-        <b>What happens (cheap SQL, no LLM):</b> for the ~75 shortlisted doctors only, pull the actual text of every candidate source:
+        <b>What happens (cheap SQL, no LLM):</b> for the 100 shortlisted doctors only, pull the actual text of every candidate source:
         <ul style="margin-top:4px">
           <li><b>Web:</b> full <code>CONTENT</code> from <code>LLM_VALIDATION</code> for each candidate <code>WEBSITE_ID</code> (+ its URL).</li>
           <li><b>PubMed:</b> <code>TITLE</code> + <code>ABSTRACT</code> from <code>CORE.PUBMED.ARTICLE</code> for each candidate <code>PMID</code>.</li>
@@ -286,7 +286,7 @@
           <li><b>Verify</b> (LLM #2, a different, adversarial model) — returns true only if the source really shows this doctor engaging with the indication.</li>
           <li><b>Map</b> — resolve the doctor and any mentioned doctors against our targeting roster by name.</li>
         </ul>
-        A source <b>counts as relevant</b> for a doctor only if it yields ≥1 grounded + verified claim. This stage is <b>untouched by the hybrid arm and the composite score</b> — it stays the sole precision arbiter. Writes a browsable <code>wiki/&lt;ts&gt;/</code> tree with a <code>drops.json</code> recording everything discarded and why.
+        A source <b>counts as relevant</b> for a doctor only if it yields ≥1 grounded + verified claim. This stage is <b>untouched by the hybrid arm and the composite score</b> — it stays the sole precision arbiter. Besides <code>data/wiki.json</code>, it writes a browsable <code>wiki/&lt;ts&gt;/</code> tree of what was ingested and verified. It also records, per verified PubMed claim, the article's year (feeding the score-development reconstruction), and threads through the total-publications-per-year map from Stage 01.
       </div>
       <div class="meta">
         <span class="chip llm">Ingest: Nova Pro (Bedrock)</span>
@@ -301,17 +301,20 @@
   <div class="stage">
     <div class="spine"><div class="badge" style="background:var(--s4)">04</div><div class="line"></div></div>
     <div class="body">
-      <h3>Assemble the KOL ranking — the composite score</h3>
+      <h3>Assemble the ranking — composite score, tenure buckets, floors</h3>
       <div class="file">04_assemble_kols.py</div>
       <div class="kv">
-        <b>What happens (no LLM):</b> compute three factors per doctor, normalise each across the shortlisted pool, and combine them into one <code>kol_score</code>:
+        <b>What happens (no LLM):</b> compute three factors per doctor and combine them into one <code>kol_score</code>, then sort doctors into <b>two mutually-exclusive buckets</b> and gate the "KOL" label with absolute floors:
         <ul style="margin-top:4px">
-          <li><b>Relevance</b> — count of verified web + verified PubMed sources (the backbone).</li>
-          <li><b>Reach</b> — distinct co-authors across the doctor's verified-relevant PubMed articles (breadth of collaboration).</li>
-          <li><b>Ratio</b> — verified-relevant sources ÷ all of the doctor's sources (topical focus).</li>
-          <li><b>Tiers</b> <span class="pill a">A</span> <span class="pill b">B</span> <span class="pill c">C</span> from the score distribution; <b>Rising Stars</b> from verified-relevant PubMed activity by year; <b>themes</b>, <b>co-author network</b>, and <b>web co-mentions</b>.</li>
+          <li><b>Relevance</b> — count of verified web + verified PubMed sources (the backbone). Normalised across the pool.</li>
+          <li><b>Reach</b> — distinct co-authors across the doctor's verified-relevant PubMed articles (breadth of collaboration). Normalised across the pool.</li>
+          <li><b>Ratio (focus)</b> — verified-relevant sources ÷ all of the doctor's sources. Used <b>raw</b> (not normalised) — it is already an intrinsic 0–1 quantity and indication-independent.</li>
+          <li><b>Tenure partition first:</b> a doctor is a <span class="pill rise">Rising Star</span> if their <b>relevant tenure</b> (years since their first verified-relevant PubMed year) is short — ≤ <code>rising_star_max_tenure_years</code> (3) — <em>and</em> they have ≥ <code>rising_star_min_pubs</code> (3) verified-relevant articles. Rising stars are pulled out first and can <b>never</b> also be KOLs.</li>
+          <li><b>Everyone else is KOL-eligible</b>, but only becomes an actual <b>KOL</b> if it clears <b>four absolute floors</b> (min verified sources, min focus ratio, recent activity, min co-author reach). This is the "cap at the bottom" that gives the label meaning regardless of the pool — see <b>Tab&nbsp;2</b> and the <b>Open questions</b>.</li>
+          <li><b>Tiers</b> <span class="pill a">A</span> <span class="pill b">B</span> <span class="pill c">C</span> are percentile bands computed over the <b>KOL pool only</b> (rising stars no longer distort the distribution). A rising star whose score already reaches Tier-A level is flagged <b>Breakout</b>.</li>
+          <li>Also builds each KOL's / rising star's <b>score-development trajectory</b> (year-by-year composite replay), <b>themes</b>, the <b>co-author network</b>, and <b>web co-mentions</b>.</li>
         </ul>
-        The exact formula, normalisation, tiers and rising-star rules are explained in <b>Tab&nbsp;2</b>.
+        The exact formula, floors, tiers, buckets and the trajectory chart are explained in <b>Tab&nbsp;2</b>.
       </div>
       <div class="meta">
         <span class="chip tbl">CORE.PUBMED.AUTHOR</span>
@@ -328,9 +331,14 @@
       <h3>Generate the report</h3>
       <div class="file">05_generate_report.py</div>
       <div class="kv">
-        <b>What happens:</b> renders a self-contained <b>HTML report</b> (top 25) — overview dashboard + KOL ranking, rising stars, thematic heatmap, regional distribution, an interactive collaboration-network graph, and individual profiles with real verbatim quotes + source links — plus an <b>Excel</b> export with one row per KOL. No network, fonts or CDN: everything is inlined so it opens anywhere.
+        <b>What happens:</b> renders a self-contained <b>HTML report</b> (top 25) — overview dashboard + KOL ranking, rising stars (with per-year <b>total-vs-relevant</b> publication bars <em>and</em> score-development charts), thematic heatmap, regional distribution, an interactive collaboration-network graph, and individual profiles with real verbatim quotes + source links, a total-vs-relevant bar chart and a <b>score-development line chart</b> (tier bands + tenure-crossing marker). No network, fonts or CDN — everything inlined so it opens anywhere. Plus an <b>Excel</b> workbook with three sheets:
+        <ul style="margin-top:4px">
+          <li><b>KOLs</b> — one row per doctor with the full scoring internals.</li>
+          <li><b>LLM Wiki Verdicts</b> — one row per source handed to the LLM (URL / PMID / kind) with the <code>counted</code>/<code>rejected</code> verdict and the verified statements, themes and sentiment. The audit trail for <em>why</em> each source did or didn't count.</li>
+          <li><b>Score by Year</b> — one row per (doctor, year) from the score-development trajectory: composite plus relevance / reach / ratio / tenure / tier each year.</li>
+        </ul>
       </div>
-      <div class="meta"><span class="chip no">no LLM — pure rendering</span></div>
+      <div class="meta"><span class="chip no">no LLM — pure rendering</span><span class="chip tbl">reads sources.json + wiki.json for the audit sheet</span></div>
       <div><span class="out">→ results/kol_report_&lt;ts&gt;.html · kol_report_&lt;ts&gt;.xlsx</span></div>
     </div>
   </div>
@@ -382,11 +390,58 @@
   <li><b>LLMs:</b> AWS Bedrock (<code>eu-central-1</code>) — <code>Amazon Nova Pro</code> for ingest, <code>Qwen3-235B</code> for the adversarial verify. Temperature 0.</li>
   <li><b>Embeddings:</b> a local ONNX model (GTE multilingual, 768-dim) for the vector-recall arm — no external API. The cross-encoder <code>Reranker</code> is vendored but not yet wired in.</li>
   <li><b>Snowflake auth:</b> AWS Secrets Manager private-key auth via the shared <code>ParameterManager</code> / <code>SecretReader</code> helpers.</li>
-  <li><b>Cost control:</b> only ~75 doctors' sources within the anchored 5-year window reach the LLM; the 20-year history is cheap SQL counts for the charts and never hits the LLM. Grounding drops fabricated quotes before any verify call is spent.</li>
+  <li><b>Cost control:</b> only the 100 shortlisted doctors' sources within the anchored 10-year window reach the LLM; the 10-year publication history is cheap SQL counts for the charts and never hits the LLM. Grounding drops fabricated quotes before any verify call is spent.</li>
 </ul>
 
 <div class="warn">
   <b>To confirm on the first live run:</b> the CF-flag column layout in <code>PUBMED_CONTENT_FRAME_SINGLE_TBL</code>; that <code>IN_RELATION</code> is numeric so <code>&gt;29</code> is the right cut; that <code>IS_OLD=0</code> is the intended web freshness filter; the real vector width of the <code>_512</code> embeddings column (the pipeline currently queries at 768 dims); and the fully-qualified locations of the cross-database tables.
+</div>
+
+<h2 id="open-questions"><span class="n">Open</span> discussions &amp; open questions</h2>
+<p>Decisions we've made deliberately but keep open for revision, plus questions we still want answered — written down so the trade-offs aren't lost between iterations.</p>
+
+<div class="card" style="border-left:4px solid var(--emerald)">
+  <h3 style="margin-top:0">1 · Norm-based scoring with a floor at the bottom <span class="pill a">Decided — values still open</span></h3>
+  <p>Today the scores are calculated <b>only from the run's own data</b> — there is no universal source of truth for who is a KOL. That felt strange, so we weighed the two ways to define "KOL":</p>
+  <div class="why">
+    <div class="track">
+      <b>Universal / absolute thresholds</b>
+      <p style="margin:6px 0 0" class="muted"><b>+</b> "KOL" means the same thing everywhere; runs are directly comparable across indications.<br>
+      <b>–</b> A threshold tuned on a common, data-rich indication (e.g. Obesity) is simply wrong for a rare one (few HCPs, thin PubMed) — you'd crown nobody, or everybody. Brittle; needs re-tuning per indication.</p>
+    </div>
+    <div class="track">
+      <b>Pure norms (relative to the pool)</b>
+      <p style="margin:6px 0 0" class="muted"><b>+</b> Self-calibrating — flexes to any indication automatically, rare or common, with no re-tuning.<br>
+      <b>–</b> No absolute meaning: the top of a <em>weak</em> pool is still labelled "KOL", and a 0.9 in one run isn't a 0.9 in another.</p>
+    </div>
+  </div>
+  <p style="margin-bottom:0"><b>What we chose:</b> keep the ranking and tiers <b>norm-based</b> (so it flexes across indications), but <b>cap the bottom</b> with four absolute floors (min verified sources, min focus ratio, recent activity, min co-author reach) so a doctor must clear a real engagement bar before "KOL" means anything. We get the flexibility of norms <em>and</em> the meaningfulness of a hard minimum. <b>Still open:</b> are the floor values (<code>5</code> verified / <code>0.10</code> ratio / <code>5</code>y / <code>3</code> co-authors) the right ones, and should the floors themselves <b>scale with indication prevalence</b> or the client's HCP universe rather than being fixed?</p>
+</div>
+
+<div class="card" style="border-left:4px solid var(--amber)">
+  <h3 style="margin-top:0">2 · Should Rising Stars also have a composite-score ceiling? <span class="pill rise">Open</span></h3>
+  <p>Right now the Rising bucket is decided <b>only on activity + tenure</b>: first verified-relevant PubMed year within the last 3 years <em>and</em> ≥ 3 verified-relevant articles. There is <b>no cap on the composite score</b>.</p>
+  <p style="margin-bottom:0">Should we add one — i.e. a doctor is "Rising" only if their composite is <b>below</b> some level (say below the Tier-A threshold, or a fixed <code>0.60</code>) — so a genuinely high-scoring newcomer is called <em>arrived</em>, not <em>rising</em>? We already flag such doctors with a <b>Breakout</b> badge; the question is whether that's enough, or whether a hard ceiling should move them out of the Rising bucket entirely. Trade-off: a score ceiling re-introduces a scored blend into what is currently a clean, easy-to-explain tenure partition.</p>
+</div>
+
+<div class="card" style="border-left:4px solid var(--accent)">
+  <h3 style="margin-top:0">3 · What fraction of HCPs actually end up as KOLs? → auto-size the candidate cut <span class="pill rise">Open — needs data</span></h3>
+  <p>The funnel currently keeps a <b>fixed top 100</b> candidates (<code>top_n_candidates</code>), set manually. But if the model is meant to be flexible and movable, the candidate cut should <b>scale to the client's HCP universe</b> — a fixed 100 under-serves a large panel and over-serves a small one.</p>
+  <p style="margin-bottom:0">To size it automatically we need the empirical <b>KOL yield rate</b>: across past targetings, what fraction of the client's supplied HCPs end up as KOLs at the end? With that, roughly<br>
+  <code>top_n_candidates ≈ (expected_KOL_rate × total_HCPs) ÷ funnel_survival_rate</code>.<br>
+  Open questions: what <em>is</em> that rate from our historical runs, is it stable or strongly indication-dependent, and what's the shortlist→KOL survival rate through Stages 03–04 that we'd divide by?</p>
+</div>
+
+<div class="card">
+  <h3 style="margin-top:0">4 · Smaller items to revisit</h3>
+  <ul style="margin-bottom:0">
+    <li><b>Window lengths.</b> We moved the PubMed scoring window and the display history both to <b>10 years</b> (from 5 and 20 respectively). Is 10 right for a fast-moving field vs. a slow one — should the window itself be indication-aware?</li>
+    <li><b>Tier percentiles.</b> Tiers A/B (85 / 60) are percentiles over the KOL pool. Should Tier A specifically also carry an absolute floor, so "Tier A" is comparable across runs the way the KOL floor made "KOL" comparable?</li>
+    <li><b>Web recency.</b> Web sources are timestamp-free, so they get no recency weighting and are frozen across backtest years. Acceptable, or do we want a web-recency proxy?</li>
+    <li><b>Seniority.</b> Reach measures co-author <em>breadth</em>, not author position / seniority — there's no author-order column in the PubMed data today. Worth sourcing?</li>
+    <li><b>Dead config key.</b> <code>rising_star_growth</code> is left over from the old "accelerating" rule and is no longer read since the tenure rewrite — remove it to avoid confusion.</li>
+    <li><b>No ground truth.</b> There is no supervised "is-a-KOL" label, so the only empirical validation is the Stage 06 time-machine backtest. Is that enough evidence for the client, or do we want a human-labelled spot-check set?</li>
+  </ul>
 </div>
 
 </section>
@@ -406,11 +461,11 @@
   <thead><tr><th>Menu group</th><th>Section</th><th>What it shows</th></tr></thead>
   <tbody>
     <tr><td rowspan="1"><b>OVERVIEW</b></td><td>Executive Dashboard</td><td>Six headline counters <em>and</em> the full ranked KOL table, one below the other.</td></tr>
-    <tr><td rowspan="4"><b>ANALYSIS</b></td><td>Rising Stars</td><td>Doctors whose verified output is accelerating or newly appeared.</td></tr>
+    <tr><td rowspan="4"><b>ANALYSIS</b></td><td>Rising Stars</td><td>Short-tenure, genuinely-active doctors — a separate bucket from KOLs, with publication + score-development charts.</td></tr>
     <tr><td>Thematic Distribution</td><td>Heatmap of which sub-topics each KOL is verified on.</td></tr>
     <tr><td>Regional Distribution</td><td>KOL counts by city, split by tier.</td></tr>
     <tr><td>Collaboration Network</td><td>Interactive co-authorship graph + supporting tables.</td></tr>
-    <tr><td><b>PROFILES</b></td><td>KOL Profiles</td><td>One card per top KOL with quotes, themes, publication trend and score breakdown.</td></tr>
+    <tr><td><b>PROFILES</b></td><td>KOL Profiles</td><td>One card per top KOL with quotes, themes, a total-vs-relevant publication chart and a score-development chart.</td></tr>
   </tbody>
 </table>
 </div>
@@ -423,8 +478,9 @@
 kol_score <span class="op">=</span>
 <span class="rel">0.60 × norm_relevance</span> <span class="op">+</span>
 <span class="rch">0.25 × norm_reach</span> <span class="op">+</span>
-<span class="rat">0.15 × norm_ratio</span>
+<span class="rat">0.15 × ratio<span class="op">(raw)</span></span>
 </div>
+<p class="muted" style="font-size:13px">Relevance and reach are <b>normalised across the pool</b> (a doctor's standing relative to the other candidates). Ratio is the exception: it is used <b>raw</b>, because it is already an intrinsic 0–1 focus measure that means the same thing in a common indication or a rare one — normalising it would throw that absolute meaning away.</p>
 
 <div class="defs">
   <div class="def rel">
@@ -436,8 +492,8 @@ kol_score <span class="op">=</span>
     <p style="margin-bottom:0">How many <b>distinct co-authors</b> the doctor has across their verified PubMed articles (de-duplicated by ORCID or name; the doctor themselves excluded). A proxy for influence breadth.</p>
   </div>
   <div class="def rat">
-    <h4>Ratio (focus) <span class="wt">weight 0.15</span></h4>
-    <p style="margin-bottom:0">Verified-relevant sources ÷ <b>all</b> of the doctor's sources. High = the doctor is a topic specialist; low = the topic is a small part of a broad output. Neutral (0) for very thin profiles so they're neither punished nor rewarded.</p>
+    <h4>Ratio (focus) <span class="wt">weight 0.15 · raw</span></h4>
+    <p style="margin-bottom:0">Verified-relevant sources ÷ <b>all</b> of the doctor's sources. High = the doctor is a topic specialist; low = the topic is a small part of a broad output. Neutral (0) for very thin profiles so they're neither punished nor rewarded. <b>Used raw</b>, not normalised.</p>
   </div>
 </div>
 
@@ -448,7 +504,7 @@ kol_score <span class="op">=</span>
   <thead><tr><th>Column</th><th>Plain meaning</th><th>Range</th></tr></thead>
   <tbody>
     <tr><td><b>Weight</b></td><td>How much this factor is <em>allowed</em> to matter, set once in config for the whole run (0.60 / 0.25 / 0.15). The same for every doctor.</td><td class="mono">fixed</td></tr>
-    <tr><td><b>Norm</b></td><td>This doctor's <em>normalised</em> value for the factor — their standing <b>relative to the other shortlisted doctors</b>, squeezed onto a 0–1 scale. 1.0 ≈ best in the pool, 0.0 ≈ lowest. Raw counts are <em>not</em> used directly; ranking-within-the-pool is, so one runaway doctor can't dominate.</td><td class="mono">0 → 1</td></tr>
+    <tr><td><b>Norm</b></td><td>For <b>relevance</b> and <b>reach</b>: this doctor's <em>normalised</em> value — their standing <b>relative to the other shortlisted doctors</b>, squeezed onto a 0–1 scale. 1.0 ≈ best in the pool, 0.0 ≈ lowest. Raw counts are <em>not</em> used directly; ranking-within-the-pool is, so one runaway doctor can't dominate. For <b>ratio</b> the "Norm" column just shows its <em>raw</em> 0–1 value (ratio is never normalised).</td><td class="mono">0 → 1</td></tr>
     <tr><td><b>Contribution</b></td><td>Weight × Norm — the actual number of points this factor adds to the composite score. The three contributions sum to the headline score.</td><td class="mono">0 → weight</td></tr>
     <tr><td><b>Evidence</b></td><td>The plain-language backing (e.g. "12 verified sources", "8 co-authors, 3 institutions", "80% of 15 total sources").</td><td>—</td></tr>
   </tbody>
@@ -471,7 +527,32 @@ kol_score <span class="op">=</span>
 </div>
 
 <h3>How "Norm" is actually computed</h3>
-<p>The default method is <b>percentile</b> (config <code>normalization</code>; <code>minmax</code> and <code>zscore</code> also available). Percentile means: for each factor, a doctor's norm is essentially <em>the fraction of the pool scoring below them</em>, rescaled so the pool's best = 1 and worst = 0, with ties sharing a rank. The key consequence for non-technical readers: <b>norms are always relative to this run's shortlist</b> — a 0.9 means "near the top of these 75 candidates", not an absolute quality score.</p>
+<p>The default method is <b>percentile</b> (config <code>normalization</code>; <code>minmax</code> and <code>zscore</code> also available), and it applies to <b>relevance and reach only</b> — ratio is used raw. Percentile means: for each of those two factors, a doctor's norm is essentially <em>the fraction of the pool scoring below them</em>, rescaled so the pool's best = 1 and worst = 0, with ties sharing a rank. The key consequence for non-technical readers: <b>those norms are always relative to this run's shortlist</b> — a 0.9 means "near the top of these 100 candidates", not an absolute quality score. This relativity is exactly why the "KOL" label also needs the <b>absolute floors</b> below.</p>
+
+<h2><span class="n">KOL</span> vs Rising Star — two separate buckets</h2>
+<p>A doctor is sorted into <b>one</b> of two mutually-exclusive buckets — never both. The split is a pure <b>tenure partition</b>, decided before any tier:</p>
+<ul>
+  <li><span class="pill rise">Rising Star</span> — their <b>relevant tenure</b> (years since their first verified-relevant PubMed publication) is short: ≤ <code>rising_star_max_tenure_years</code> (<b>3</b>) — <em>and</em> they have at least <code>rising_star_min_pubs</code> (<b>3</b>) verified-relevant articles (so it's a genuine climb, not a one-off). Rising stars are taken out first and can never also be KOLs. A doctor with no verified PubMed year at all has undefined tenure and is never a rising star.</li>
+  <li><b>KOL-eligible</b> — everyone else: long relevant tenure, or web-only (no publication tenure), or too few verified pubs to count as rising.</li>
+</ul>
+<p class="muted" style="font-size:13px">This is a deliberate trade-off: a prolific but very recent newcomer is bucketed as Rising, not KOL. If such a doctor's composite already reaches Tier-A level they get a <b>Breakout</b> badge, so an exceptional fast riser is still surfaced. (Whether the rising bucket should <em>also</em> have a score ceiling is an <b>open question</b> — see the end of Tab&nbsp;1.)</p>
+
+<h2><span class="n">What</span> makes a KOL a KOL — the absolute floors</h2>
+<p>Tiers are <b>relative</b> (percentiles of the pool). On their own, relative bands would crown "KOLs" even in a weak pool — the top of a thin field is still just the top of a thin field. So a KOL-eligible doctor is only labelled an actual <b>KOL</b> if it clears <b>four absolute floors</b> — the same fixed bars in every run, independent of the pool. Fail any one, and the doctor lands in neither bucket:</p>
+<div class="tbl-wrap">
+<table>
+  <thead><tr><th>Floor</th><th>Config</th><th>Meaning</th></tr></thead>
+  <tbody>
+    <tr><td><b>Min verified sources</b></td><td class="mono">kol_floor_min_verified = 5</td><td>≥ 5 verified web + PubMed sources. Applies to <b>everyone</b>, web-only doctors included.</td></tr>
+    <tr><td><b>Min focus ratio</b></td><td class="mono">kol_floor_min_ratio = 0.10</td><td>At least 10% of the doctor's output is on-topic. A neutral (thin-denominator) ratio fails this.</td></tr>
+    <tr><td><b>Recent activity</b></td><td class="mono">kol_floor_active_within_yrs = 5</td><td>Any verified web source (timestamp-free, treated as current) <em>or</em> a verified PubMed pub within 5 years of the anchor year.</td></tr>
+    <tr><td><b>Min co-author reach</b></td><td class="mono">kol_floor_min_coauthors = 3</td><td>≥ 3 distinct co-authors — <b>waived</b> for a purely web-based voice with no PubMed at all, so it isn't silently dropped.</td></tr>
+  </tbody>
+</table>
+</div>
+<div class="card principle" style="margin-top:12px">
+  <p style="margin:0"><b>Why norms + a bottom cap, and not universal thresholds?</b> Keeping the ranking <b>norm-based</b> lets the model flex across a common indication and a rare one without re-tuning — "top of this pool" travels. Adding <b>absolute floors at the bottom</b> restores the one thing pure norms lack: a doctor must clear a real engagement bar before "KOL" means anything. We get the flexibility of norms <em>and</em> the meaningfulness of a hard minimum. The tuning of the floor <em>values</em> is an <b>open question</b> — see the end of Tab&nbsp;1.</p>
+</div>
 
 <h2><span class="n">The</span> KOL ranking table — column by column</h2>
 <div class="tbl-wrap">
@@ -490,23 +571,29 @@ kol_score <span class="op">=</span>
 </div>
 
 <h2><span class="n">How</span> tiers are divided</h2>
-<p>Tiers are simply <b>bands of the composite-score distribution</b> across the ranked KOLs (config <code>tier_a_percentile = 85</code>, <code>tier_b_percentile = 60</code>):</p>
+<p>Tiers are <b>bands of the composite-score distribution over the KOL pool only</b> (doctors with <code>is_kol == True</code>; config <code>tier_a_percentile = 85</code>, <code>tier_b_percentile = 60</code>). Rising stars are excluded from this distribution, so they no longer distort where the bands fall:</p>
 <ul>
-  <li><span class="pill a">A</span> — score in roughly the <b>top 15%</b> of the pool (at/above the 85th percentile).</li>
+  <li><span class="pill a">A</span> — score in roughly the <b>top 15%</b> of the KOL pool (at/above the 85th percentile).</li>
   <li><span class="pill b">B</span> — score between roughly the <b>60th and 85th percentile</b> (the next ~25%).</li>
-  <li><span class="pill c">C</span> — everyone else with verified evidence (the bottom ~60%).</li>
+  <li><span class="pill c">C</span> — the remaining KOLs (the bottom ~60% of the pool).</li>
 </ul>
-<p class="muted" style="font-size:13px">Tiers are relative to this run's KOL pool, not fixed thresholds. Doctors with <b>zero</b> verified sources are dropped before tiering — they never appear.</p>
+<p class="muted" style="font-size:13px">Tiers are relative to this run's KOL pool, not fixed thresholds — which is exactly why the <b>absolute floors</b> above decide who is a KOL in the first place. Doctors who aren't KOLs (rising stars, and anyone failing a floor) carry no tier. Doctors with <b>zero</b> verified sources are dropped entirely.</p>
 
 <h2><span class="n">How</span> rising stars are calculated</h2>
-<p>A doctor gets the <span class="pill rise">Rising</span> flag from their <b>verified-relevant PubMed activity by year</b> (never from unverified keyword counts, so an off-topic publication burst can't crown anyone). Splitting their verified articles into <b>recent</b> (the two most recent years) vs. <b>prior</b> (everything earlier), a doctor is Rising if <em>either</em>:</p>
+<p>The <span class="pill rise">Rising</span> bucket is a <b>tenure test</b>, computed purely from <b>verified-relevant PubMed activity</b> (never from unverified keyword counts, so an off-topic publication burst can't crown anyone). A doctor is Rising when <b>both</b> hold:</p>
 <ul>
-  <li><b>New voice</b> — ≥ <code>rising_star_min_pubs</code> (default 3) recent verified articles and <b>zero</b> prior ones (they appeared from nowhere), <em>or</em></li>
-  <li><b>Accelerating</b> — recent output is at least <code>rising_star_growth</code>× (default 3×) their prior output, and recent ≥ 3.</li>
+  <li><b>Short relevant tenure</b> — their first verified-relevant PubMed year is within the last <code>rising_star_max_tenure_years</code> (<b>3</b>) years of the anchor year. They haven't been on the topic long.</li>
+  <li><b>Genuinely active</b> — at least <code>rising_star_min_pubs</code> (<b>3</b>) verified-relevant articles, so it's a real climb rather than a single paper.</li>
 </ul>
-<p>Each rising-star card shows a <b>pubs-per-year sparkline</b>, the <b>recent vs. prior</b> counts, and the growth multiple (or "New voice").</p>
+<p>Because the buckets are mutually exclusive, nobody in the Rising list appears in the KOL ranking. A rising star whose composite already reaches the KOL Tier-A threshold gets a <span class="pill a">Breakout</span> badge. Each rising-star row carries the same composite-score drill-down as the KOL ranking; below the table are two sections — <b>Publication trajectory</b> (total-vs-relevant bars) and <b>Score development</b> (the same line chart the KOL profiles use).</p>
 <div class="warn" style="background:var(--accent-bg);border-left-color:var(--accent)">
-  <b style="color:var(--accent)">Note on the bar charts / sparklines.</b> Bar height = <b>CF-flag count</b> — i.e. keyword-level publication activity over 20 years, <em>unverified</em>. It's there to show a long trend. Only the most-recent verified articles feed the score, tiers and the Rising flag. So a tall old bar with no recent verified output will <em>not</em> make a doctor a KOL.
+  <b style="color:var(--accent)">Note on the bar charts.</b> Each bar chart now shows <b>two columns per year over 10 years</b>: a light column = the doctor's <b>total</b> publications that year, and a dark inner column = the <b>verified-relevant</b> subset. The light bars are unverified context (a long trend); only the verified-relevant part feeds the score, tiers, tenure and the Rising test. So a tall old <em>total</em> bar with no recent verified-relevant output will <em>not</em> make a doctor a KOL.
+</div>
+
+<h2><span class="n">The</span> score-development chart</h2>
+<p>Every KOL profile card — and every rising-star card — carries a small <b>line chart of the composite score year by year</b>, drawn under the publication bars and sharing the same x-axis width, so you can read publication movement and score movement against the same years. The green / blue / grey background bands are the Tier A / B / C score ranges, so you can watch the line climb through the tiers over time; a dashed marker shows the year the doctor crossed out of rising-star tenure.</p>
+<div class="warn" style="background:var(--accent-bg);border-left-color:var(--accent)">
+  <b style="color:var(--accent)">What this chart is — and isn't.</b> It is a <b>single-run, backward-looking replay</b> against a <b>fixed yardstick</b>: today's final pool is the ruler for every year shown, so the line reflects the individual's own growth, not pool churn. Web sources are a constant baseline (they carry no timestamps), and today's LLM verification verdicts are applied back onto each historical year's PubMed record. It <em>cannot</em> show when a doctor entered or left the KOL pool, or was demoted — that is what the Stage&nbsp;06 two-run backtest is for. The same year-by-year numbers are exported in the Excel <b>Score by Year</b> sheet.</p>
 </div>
 
 <h2><span class="n">Thematic</span> distribution (heatmap)</h2>
@@ -526,10 +613,15 @@ kol_score <span class="op">=</span>
 <p class="muted" style="font-size:13px">Two tables below the graph list every edge: PubMed co-authorships and web co-mentions (doctors named alongside each other in verified web statements).</p>
 
 <h2><span class="n">Individual</span> KOL profiles</h2>
-<p>One card per top KOL: tier + rising badges, composite score and verified-source counts, a 20-year publication sparkline, verified <b>themes</b>, up to three real <b>verbatim quotes</b> (colour-coded by sentiment, each linking to its source), and the same expandable weight/norm/contribution breakdown. Every claim on a card is one that survived grounding <em>and</em> adversarial verification — nothing is paraphrased or invented.</p>
+<p>One card per top KOL: tier badge, composite score and verified-source counts, a <b>10-year total-vs-relevant publication bar chart</b> above a <b>score-development line chart</b> (same width, so they line up), verified <b>themes</b>, and up to three real <b>verbatim quotes</b> (colour-coded by sentiment, each linking to its source). Every claim on a card survived grounding <em>and</em> adversarial verification — nothing is paraphrased or invented. The per-card "how it was scored" dropdown and the "N years on-topic" sticker were removed to keep the cards uncluttered — the composite is stated on the card, the full weight/norm/contribution breakdown still lives on the KOL ranking rows (and now the rising-star rows), and tenure is readable from the charts.</p>
 
-<h2><span class="n">The</span> Excel export</h2>
-<p>Alongside the HTML, one <code>.xlsx</code> row per KOL carries the same data for analysts: rank, name, specialty, city, tier, rising flag, composite score, verified counts (web / pubmed), latest year, top themes, a representative quote + URL, and the raw scoring internals — <code>norm_relevance / norm_reach / norm_ratio</code>, the three <code>contribution_*</code> values, <code>distinct_coauthors</code>, <code>distinct_affiliations</code> and <code>relevance_ratio</code>.</p>
+<h2><span class="n">The</span> Excel workbook</h2>
+<p>Alongside the HTML, the <code>.xlsx</code> is the analyst's full audit trail — deliberately <b>more detailed than the report</b>, which only shows the top 25. Three sheets:</p>
+<ul>
+  <li><b>KOLs</b> — one row per doctor: rank, name, specialty, city, tier, rising flag, composite score, verified counts (web / pubmed), latest year, top themes, a representative quote + URL, and the raw scoring internals — <code>norm_relevance / norm_reach / norm_ratio</code>, the three <code>contribution_*</code> values, <code>distinct_coauthors</code>, <code>distinct_affiliations</code>, <code>relevance_ratio</code>, plus <code>total_publications</code>, <code>relevant_tenure</code>, <code>is_kol</code> and <code>breakout</code>.</li>
+  <li><b>LLM Wiki Verdicts</b> — one row per <em>source</em> handed to the LLM: rank, name, kind (web / pubmed), URL, PMID, a <code>counted</code> / <code>rejected</code> verdict (counted = the source produced ≥1 verified claim), the number of verified claims, and the verified statements / themes / sentiment. This lets you trace exactly why any source did or didn't contribute — the source text itself is not copied in, only the URL and the verdict. (If the underlying <code>sources.json</code> / <code>wiki.json</code> aren't present, the sheet shows a single "not available" note instead.)</li>
+  <li><b>Score by Year</b> — one row per (doctor, year) from the score-development trajectory: composite score, relevance, reach, ratio, tenure and tier for each year. The same numbers the profile line chart draws, in tabular form for cross-checking.</li>
+</ul>
 
 <h2><span class="n">Questions</span> you should be able to answer</h2>
 <div class="faq">
@@ -547,11 +639,11 @@ kol_score <span class="op">=</span>
   </details>
   <details>
     <summary>Why isn't specialty used to filter?</summary>
-    <p>Because hardcoding specialty exclusions is how v1 went wrong in the other direction and is brittle. Instead, relevance verification does the filtering: an off-target specialist simply won't accumulate verified on-topic sources and falls out during the 75→25 buffer. Specialty is displayed for context only.</p>
+    <p>Because hardcoding specialty exclusions is how v1 went wrong in the other direction and is brittle. Instead, relevance verification does the filtering: an off-target specialist simply won't accumulate verified on-topic sources and falls out during the 100→25 buffer. Specialty is displayed for context only.</p>
   </details>
   <details>
     <summary>Why are web sources not date-filtered like PubMed?</summary>
-    <p>Web records in <code>LLM_VALIDATION</code> are timestamp-free; the only freshness signal is <code>IS_OLD=0</code>, which we apply. PubMed articles do have years, so we window them (5 years) and can pin them to a past anchor year for backtesting. In a backtest run, web sources are shown as-is (frozen across years) and the report flags this.</p>
+    <p>Web records in <code>LLM_VALIDATION</code> are timestamp-free; the only freshness signal is <code>IS_OLD=0</code>, which we apply. PubMed articles do have years, so we window them (10 years) and can pin them to a past anchor year for backtesting. In a backtest run, web sources are shown as-is (frozen across years) and the report flags this.</p>
   </details>
   <details>
     <summary>How do we know the ranking is any good, with no "correct answer" to compare to?</summary>
@@ -571,7 +663,7 @@ kol_score <span class="op">=</span>
 </section>
 
 <footer>
-  Pipeline &amp; report guide for Service 2.1 — KOL Identification &amp; Mapping. Scoring model: composite of relevance + co-author reach + relevance ratio, all downstream of the LLM ground→verify pass. Specs: <code>docs/superpowers/specs/2026-07-13-kol-scoring-model-design.md</code> (current scoring) and <code>2026-07-09-kol-identification-v2-design.md</code> (funnel). KOL score = weighted, normalised blend on top of genuinely-relevant sources.
+  Pipeline &amp; report guide for Service 2.1 — KOL Identification &amp; Mapping. Scoring model: composite of relevance + co-author reach + relevance ratio (ratio raw), all downstream of the LLM ground→verify pass, then a mutually-exclusive KOL / Rising-Star tenure partition with four absolute KOL floors and tiers over the KOL pool only. Specs: <code>docs/superpowers/specs/2026-07-15-kol-tenure-buckets-design.md</code> (current scoring / buckets / floors), <code>2026-07-13-kol-scoring-model-design.md</code> (composite + hybrid recall + backtest) and <code>2026-07-09-kol-identification-v2-design.md</code> (funnel).
 </footer>
 
 </div>
