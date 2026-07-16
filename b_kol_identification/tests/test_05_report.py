@@ -400,3 +400,41 @@ def test_wiki_verdict_rows_mark_counted_and_rejected():
     assert verdicts["http://b"] == "rejected"      # w2 handed over, no claim
     assert verdicts["http://pm/111"] == "counted"
     assert all("SECRET BODY" not in str(c) for r in rows for c in r)   # full_text never leaks
+
+
+def test_write_excel_gates_verdict_rows_on_both_sources_and_wiki_loaded(tmp_path):
+    """Regression test: if sources.json loads but wiki.json is missing, show the
+    'not available' note instead of misleading 'rejected' verdicts for every source."""
+    import json, openpyxl
+    out = tmp_path / "k.xlsx"
+    # Write a real minimal sources.json with one HCP and one web source
+    sources_path = tmp_path / "sources.json"
+    sources_json = {
+        "hcps": [{
+            "s_customer_id": "10",
+            "web_sources": [{"source_id": "w1", "kind": "web", "url": "http://example.com"}],
+            "pubmed_sources": []
+        }]
+    }
+    with open(sources_path, "w", encoding="utf-8") as f:
+        json.dump(sources_json, f)
+
+    # Call write_excel with sources present but wiki missing (None path)
+    mod.write_excel(DATA, str(out), sources_path=str(sources_path), wiki_path=None)
+
+    # Load and inspect the Excel file
+    wb = openpyxl.load_workbook(out)
+    ws2 = wb["LLM Wiki Verdicts"]
+
+    # Should contain only the header row + one note row (no verdict rows)
+    assert ws2.max_row == 2, f"Expected 2 rows (header + note), got {ws2.max_row}"
+
+    # Check that the note text is present in row 2, column B
+    note_cell = ws2["B2"].value
+    assert "not available" in note_cell, f"Expected 'not available' in note, got: {note_cell}"
+
+    # No verdict column should contain "rejected" (that would be misleading)
+    verdict_col_idx = mod.WIKI_VERDICT_HEADERS.index("Verdict") + 1  # 1-indexed
+    for row_idx in range(2, ws2.max_row + 1):
+        cell = ws2.cell(row=row_idx, column=verdict_col_idx)
+        assert cell.value != "rejected", f"Row {row_idx} has misleading 'rejected' verdict when wiki was missing"

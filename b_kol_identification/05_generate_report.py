@@ -1031,14 +1031,14 @@ def write_excel(data: dict, path: str, sources_path: str = None, wiki_path: str 
     # 'counted'/'rejected' verdict and the verified claim(s) it produced.
     ws2 = wb.create_sheet("LLM Wiki Verdicts")
     ws2.append(WIKI_VERDICT_HEADERS)
-    wiki_rows = build_wiki_verdict_rows(
-        data["hcps"], _load_json_safe(sources_path), _load_json_safe(wiki_path))
-    if wiki_rows:
-        for r in wiki_rows:
-            ws2.append(r)
-    else:
-        note = ["", "sources.json / wiki.json not found — run stages 02–03"]
+    src_data = _load_json_safe(sources_path)
+    wiki_data = _load_json_safe(wiki_path)
+    if src_data is None or wiki_data is None:
+        note = ["", "sources.json / wiki.json not available — run stages 02–03"]
         ws2.append(note + [""] * (len(WIKI_VERDICT_HEADERS) - len(note)))
+    else:
+        for r in build_wiki_verdict_rows(data["hcps"], src_data, wiki_data):
+            ws2.append(r)
     ws2.freeze_panes = "A2"
     _autosize(ws2, WIKI_VERDICT_HEADERS)
 
