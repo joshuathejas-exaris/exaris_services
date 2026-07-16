@@ -943,7 +943,59 @@ def build_report_html(data, weights=None, as_of_year_cfg="latest", tier_pcts=Non
 </div></body></html>"""
 
 
-def write_excel(data: dict, path: str) -> None:
+WIKI_VERDICT_HEADERS = ["Rank", "Name", "Kind", "URL", "PMID", "Verdict",
+                        "Verified claims", "Statements", "Themes", "Sentiments"]
+_CELL_MAX = 1500  # keep joined statement cells readable, well under Excel's 32767 limit
+
+
+def _load_json_safe(path):
+    if not path:
+        return None
+    try:
+        with open(path, encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return None
+
+
+def build_wiki_verdict_rows(hcps, sources_data, wiki_data):
+    """One row per source handed to the LLM (from sources.json), joined to the verified
+    claims it produced (from wiki.json), keyed by source_id. Verdict is 'counted' when the
+    source yielded >=1 verified claim, else 'rejected'. Source full_text is never emitted."""
+    src_by_id = {h.get("s_customer_id"): h for h in (sources_data or {}).get("hcps", [])}
+    claims_by_hcp = {}
+    for wh in (wiki_data or {}).get("hcps", []):
+        by_src = {}
+        for c in wh.get("claims", []):
+            by_src.setdefault(str(c.get("source_id")), []).append(c)
+        claims_by_hcp[wh.get("s_customer_id")] = by_src
+    rows = []
+    for rank, h in enumerate(hcps, 1):
+        cid = h.get("s_customer_id")
+        sh = src_by_id.get(cid)
+        if not sh:
+            continue
+        by_src = claims_by_hcp.get(cid, {})
+        for s in (sh.get("web_sources", []) + sh.get("pubmed_sources", [])):
+            claims = by_src.get(str(s.get("source_id")), [])
+            statements = " | ".join(c.get("statement", "") for c in claims)[:_CELL_MAX]
+            themes = ", ".join(sorted({t for c in claims for t in (c.get("themes") or [])}))
+            sentiments = ", ".join(sorted({c.get("sentiment", "") for c in claims if c.get("sentiment")}))
+            rows.append([rank, h.get("name", ""), s.get("kind", ""), s.get("url", ""),
+                         s.get("pmid", ""), "counted" if claims else "rejected",
+                         len(claims), statements, themes, sentiments])
+    return rows
+
+
+def _autosize(ws, headers, max_w=60):
+    from openpyxl.utils import get_column_letter
+    for ci in range(1, len(headers) + 1):
+        col = get_column_letter(ci)
+        best = max((len(str(c.value)) for c in ws[col] if c.value is not None), default=0)
+        ws.column_dimensions[col].width = min(max_w, best) + 2
+
+
+def write_excel(data: dict, path: str, sources_path: str = None, wiki_path: str = None) -> None:
     import openpyxl
     wb = openpyxl.Workbook(); ws = wb.active; ws.title = "KOLs"
     headers = ["Rank", "Name", "Specialty", "City", "Tier", "Rising star",
@@ -972,6 +1024,24 @@ def write_excel(data: dict, path: str) -> None:
                    ratio.get("ratio", 0),
                    h.get("total_pubmed_sources", 0), h.get("relevant_tenure", ""),
                    "yes" if h.get("is_kol") else "", "yes" if h.get("breakout") else ""])
+    ws.freeze_panes = "A2"
+    _autosize(ws, headers)
+
+    # Sheet 2 — LLM Wiki Verdicts: one row per source handed to the LLM, with the
+    # 'counted'/'rejected' verdict and the verified claim(s) it produced.
+    ws2 = wb.create_sheet("LLM Wiki Verdicts")
+    ws2.append(WIKI_VERDICT_HEADERS)
+    wiki_rows = build_wiki_verdict_rows(
+        data["hcps"], _load_json_safe(sources_path), _load_json_safe(wiki_path))
+    if wiki_rows:
+        for r in wiki_rows:
+            ws2.append(r)
+    else:
+        note = ["", "sources.json / wiki.json not found — run stages 02–03"]
+        ws2.append(note + [""] * (len(WIKI_VERDICT_HEADERS) - len(note)))
+    ws2.freeze_panes = "A2"
+    _autosize(ws2, WIKI_VERDICT_HEADERS)
+
     wb.save(path)
 
 
@@ -996,7 +1066,9 @@ def main():
         f.write(build_report_html(data, weights=weights, as_of_year_cfg=as_of_year_cfg, tier_pcts=tier_pcts, rising_max=rising_max))
     log.info(f"Wrote {html_path}")
     xlsx_path = os.path.join(_DIR, "results", f"kol_report_{ts}.xlsx")
-    write_excel(data, xlsx_path)
+    write_excel(data, xlsx_path,
+                sources_path=os.path.join(_DIR, "data", "sources.json"),
+                wiki_path=os.path.join(_DIR, "data", "wiki.json"))
     log.info(f"Wrote {xlsx_path}")
 
 if __name__ == "__main__":

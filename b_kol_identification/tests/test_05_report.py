@@ -376,3 +376,27 @@ def test_profiles_omit_tenure_sticker():
     h = dict(DATA["hcps"][0]); h["relevant_tenure"] = 7
     html = mod.render_profiles([h], ["2023", "2024"], top_n=10)
     assert 'pill stage' not in html
+
+
+# ── Task 5: Excel "LLM Wiki Verdicts" sheet ─────────────────────────────────────
+
+def test_wiki_verdict_rows_mark_counted_and_rejected():
+    hcps = [{"s_customer_id": "10", "name": "Anna Berg"}]
+    sources = {"hcps": [{"s_customer_id": "10",
+                         "web_sources": [{"source_id": "w1", "kind": "web", "url": "http://a"},
+                                         {"source_id": "w2", "kind": "web", "url": "http://b"}],
+                         "pubmed_sources": [{"source_id": "111", "kind": "pubmed",
+                                             "pmid": "111", "url": "http://pm/111",
+                                             "full_text": "SECRET BODY"}]}]}
+    wiki = {"hcps": [{"s_customer_id": "10",
+                      "claims": [{"source_id": "w1", "statement": "s1", "themes": ["Obesity"],
+                                  "sentiment": "positive", "verified": True},
+                                 {"source_id": "111", "statement": "s2", "themes": ["NASH"],
+                                  "sentiment": "neutral", "verified": True}]}]}
+    rows = mod.build_wiki_verdict_rows(hcps, sources, wiki)
+    hdr = mod.WIKI_VERDICT_HEADERS
+    verdicts = {r[hdr.index("URL")]: r[hdr.index("Verdict")] for r in rows}
+    assert verdicts["http://a"] == "counted"      # w1 produced a claim
+    assert verdicts["http://b"] == "rejected"      # w2 handed over, no claim
+    assert verdicts["http://pm/111"] == "counted"
+    assert all("SECRET BODY" not in str(c) for r in rows for c in r)   # full_text never leaks
