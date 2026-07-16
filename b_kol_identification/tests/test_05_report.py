@@ -79,6 +79,38 @@ def test_rising_stars_numbers_come_from_verified_pubmed_years_not_pub_by_year():
     assert "<b>3</b> recent" in html and "<b>0</b> prior" in html
     assert "100" not in html
 
+def _rising_hcp_with_traj():
+    return {"name": "Rita Stern", "specialty": "Innere Medizin", "city": "Kiel",
+            "rising_star": True, "relevant_tenure": 2, "kol_score": 0.71,
+            "verified_pubmed_years": {"2022": 2, "2023": 3},
+            "total_pub_by_year": {"2022": 3, "2023": 4},
+            "theme_labels": [{"term_key": "CF_OBESITY", "term_en": "Obesity", "count": 3}],
+            "norm_relevance": 0.8, "norm_reach": 0.5, "norm_ratio": 0.6,
+            "factor_contributions": {"relevance": 0.48, "reach": 0.12, "ratio": 0.09},
+            "reach": {"distinct_coauthors": 5, "distinct_affiliations": 4},
+            "ratio": {"ratio": 0.6, "denominator": 10},
+            "verified_web_count": 2, "verified_pubmed_count": 5,
+            "top_quotes": [{"quote": "q", "url": "http://x"}],
+            "score_trajectory": [{"year": 2021, "score": 0.3, "tier": "C", "tenure": 0},
+                                 {"year": 2022, "score": 0.5, "tier": "B", "tenure": 1},
+                                 {"year": 2023, "score": 0.71, "tier": "B", "tenure": 2}]}
+
+
+def test_rising_stars_has_score_development_section_with_chart():
+    html = mod.render_rising_stars([_rising_hcp_with_traj()], ["2021", "2022", "2023"],
+                                   weights={"relevance": 0.6, "reach": 0.25, "ratio": 0.15},
+                                   t_a=0.8, t_b=0.4)
+    assert "Score development" in html
+    assert "<polyline" in html            # the dev line chart rendered
+
+
+def test_rising_stars_row_has_score_breakdown():
+    html = mod.render_rising_stars([_rising_hcp_with_traj()], ["2021", "2022", "2023"],
+                                   weights={"relevance": 0.6, "reach": 0.25, "ratio": 0.15})
+    assert "score-breakdown" in html      # the <details> drill-down is present in the table
+    assert "how it was scored" in html
+
+
 def test_thematic_heatmap_uses_theme_labels_not_cf_by_term():
     html = mod.render_thematic_heatmap(DATA["hcps"], DATA["pca_terms"], top_n=20)
     assert "Anna Berg" in html and "Obesity" in html and "5" in html

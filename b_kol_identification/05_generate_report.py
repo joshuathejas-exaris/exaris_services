@@ -399,7 +399,9 @@ def render_score_dev_chart(trajectory, thresh_a, thresh_b, width=320, height=120
             f'{rects}{marker}{line}{dots}</svg>')
 
 
-def render_rising_stars(hcps, all_years):
+def render_rising_stars(hcps, all_years, weights=None, t_a=float("inf"), t_b=float("inf"),
+                        rising_max=RISING_MAX_TENURE_DEFAULT):
+    weights = weights or DEFAULT_WEIGHTS
     stars = [h for h in hcps if h.get("rising_star")]
     if not stars:
         return ""
@@ -419,13 +421,13 @@ def render_rising_stars(hcps, all_years):
                   f'<td><b>{_esc(h.get("name",""))}</b> <span class="pill rise">Rising</span>{breakout}<br>'
                   f'<span class="muted">{_esc(h.get("specialty",""))}</span></td>'
                   f'<td>{_esc(h.get("city",""))}</td><td>{tenure_txt}</td>'
-                  f'<td><b>{h.get("kol_score",0):.2f}</b></td>'
+                  f'<td><b>{h.get("kol_score",0):.2f}</b>{render_score_breakdown(h, weights)}</td>'
                   f'<td><b>{recent}</b> recent vs <b>{prior}</b> prior &middot; {ratio}</td>'
                   f'<td>{themes}</td></tr>')
     table = (f'<table><thead><tr><th>#</th><th>Name / Specialty</th><th>City</th><th>Tenure</th>'
              f'<th>Composite score</th><th>Recent vs prior (verified pubs)</th><th>Themes</th>'
              f'</tr></thead><tbody>{trows}</tbody></table>')
-    # Publication bars (below) — total vs indication-relevant per year, same style as KOL profiles.
+    # Publication bars — total vs indication-relevant per year, same style as KOL profiles.
     bar_cards = ""
     for h in stars:
         bars = render_year_bars(h.get("total_pub_by_year", {}), h.get("verified_pubmed_years", {}), all_years)
@@ -436,7 +438,19 @@ def render_rising_stars(hcps, all_years):
                       f'<span class="muted spark-label">pubs/yr — total vs relevant</span></div></div>')
     bars_block = (f'<h3>Publication trajectory — total vs indication-relevant</h3>'
                   f'<div class="rising-grid">{bar_cards}</div>') if bar_cards else ""
-    return f'<h2>Rising Stars</h2>{table}{bars_block}'
+    # Score development (separate section) — composite score over years with tier bands,
+    # the same chart used on KOL profile cards.
+    dev_cards = ""
+    for h in stars:
+        chart = render_score_dev_chart(h.get("score_trajectory", []), t_a, t_b, rising_max=rising_max)
+        if not chart:
+            continue
+        dev_cards += (f'<div class="rising-card"><b>{_esc(h.get("name",""))}</b>'
+                      f'<div style="margin:.4rem 0">{chart}'
+                      f'<span class="muted spark-label">score development</span></div></div>')
+    dev_block = (f'<h3>Score development — composite score over time</h3>'
+                 f'<div class="rising-grid">{dev_cards}</div>') if dev_cards else ""
+    return f'<h2>Rising Stars</h2>{table}{bars_block}{dev_block}'
 
 
 def render_established_new_callout(hcps):
@@ -841,7 +855,7 @@ def build_report_html(data, weights=None, as_of_year_cfg="latest", tier_pcts=Non
         "years since their first indication-relevant publication. Rising stars are a separate, "
         "mutually-exclusive bucket and are shown only in the Rising Stars tab, never here.")
     rising_section = _splice_explainer(
-        render_rising_stars(top, all_years)
+        render_rising_stars(top, all_years, weights=weights, t_a=t_a, t_b=t_b, rising_max=rising_max)
         or '<h2>Rising Stars</h2><p class="muted">No rising stars identified.</p>',
         "Rising stars are a separate bucket from KOLs — climbers, not yet arrived. An HCP is a "
         "rising star when their indication-relevant publication tenure is short (first on-topic "
