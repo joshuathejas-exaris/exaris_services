@@ -35,6 +35,10 @@ DEFAULT_WEIGHTS = {"relevance": 0.60, "reach": 0.25, "ratio": 0.15}
 
 RISING_MAX_TENURE_DEFAULT = 3
 
+# Shared width for the two per-profile charts so their x-axes span the same length and
+# the publication bars sit directly above the matching points on the score line below.
+PROFILE_CHART_W = 320
+
 # Fallback tier percentiles (Stage 04 config defaults) used when the caller does not
 # pass the run's actual [scoring] tier_a_percentile/tier_b_percentile through.
 DEFAULT_TIER_PCTS = (85.0, 60.0)
@@ -323,25 +327,32 @@ def render_sparkline(pub_by_year, all_years, width=80, height=24):
     return f'<svg width="{width}" height="{height}" viewBox="0 0 {width} {height}">{"".join(bars)}</svg>'
 
 
-def render_year_bars(total_by_year, relevant_by_year, all_years, width=190, height=44):
+def render_year_bars(total_by_year, relevant_by_year, all_years, width=PROFILE_CHART_W, height=54):
     """Grouped per-year bars: light column = all publications that year, dark inner
-    column = the verified-relevant subset. Inline SVG (no CDN)."""
+    column = the verified-relevant subset. Drawn on an x/y axis frame, and sharing the
+    score-development chart's width + horizontal insets so the columns line up above the
+    score line. Inline SVG (no CDN)."""
     tot = {str(y): int(v) for y, v in (total_by_year or {}).items()}
     rel = {str(y): int(v) for y, v in (relevant_by_year or {}).items()}
     if not tot and not rel:
         return ""
     years = list(all_years)
     peak = max([tot.get(y, 0) for y in years] + [rel.get(y, 0) for y in years] + [1])
+    # Same horizontal insets as render_score_dev_chart (pad_l/pad_r = 6) so both charts'
+    # plotted regions start and end at the same x.
+    pad_l, pad_r, pad_t, pad_b = 6, 6, 6, 12
+    plot_w = width - pad_l - pad_r
+    base = height - pad_b
+    plot_h = base - pad_t
     n = max(len(years), 1)
-    bw = width / n
+    bw = plot_w / n
     pad = bw * 0.2
-    base = height - 12
     rects, labels = [], []
     for i, y in enumerate(years):
-        x = i * bw + pad
+        x = pad_l + i * bw + pad
         w = bw - 2 * pad
-        th = (tot.get(y, 0) / peak) * base
-        rh = (rel.get(y, 0) / peak) * base
+        th = (tot.get(y, 0) / peak) * plot_h
+        rh = (rel.get(y, 0) / peak) * plot_h
         if tot.get(y, 0):
             rects.append(f'<rect x="{x:.1f}" y="{base - th:.1f}" width="{w:.1f}" '
                          f'height="{th:.1f}" fill="{PALETTE["line"]}"/>')
@@ -351,12 +362,16 @@ def render_year_bars(total_by_year, relevant_by_year, all_years, width=190, heig
         if y.endswith("0") or y.endswith("5"):
             labels.append(f'<text x="{x + w/2:.1f}" y="{height - 1}" font-size="7" '
                           f'text-anchor="middle" fill="{PALETTE["muted"]}">{y[2:]}</text>')
+    axes = (f'<line x1="{pad_l}" y1="{pad_t}" x2="{pad_l}" y2="{base:.1f}" '
+            f'stroke="{PALETTE["muted"]}" stroke-width="1"/>'
+            f'<line x1="{pad_l}" y1="{base:.1f}" x2="{width - pad_r}" y2="{base:.1f}" '
+            f'stroke="{PALETTE["muted"]}" stroke-width="1"/>')
     return (f'<svg width="{width}" height="{height}" viewBox="0 0 {width} {height}" '
             f'role="img" aria-label="publications per year, total vs relevant">'
-            f'{"".join(rects)}{"".join(labels)}</svg>')
+            f'{axes}{"".join(rects)}{"".join(labels)}</svg>')
 
 
-def render_score_dev_chart(trajectory, thresh_a, thresh_b, width=320, height=120, rising_max=RISING_MAX_TENURE_DEFAULT):
+def render_score_dev_chart(trajectory, thresh_a, thresh_b, width=PROFILE_CHART_W, height=120, rising_max=RISING_MAX_TENURE_DEFAULT):
     """Line chart of composite score over years with A/B/C tier bands and a marker at
     the year the HCP crossed from rising-star tenure into KOL tenure. Inline SVG."""
     pts = [p for p in (trajectory or []) if isinstance(p.get("score"), (int, float))]
@@ -399,7 +414,9 @@ def render_score_dev_chart(trajectory, thresh_a, thresh_b, width=320, height=120
             f'{rects}{marker}{line}{dots}</svg>')
 
 
-def render_rising_stars(hcps, all_years):
+def render_rising_stars(hcps, all_years, weights=None, t_a=float("inf"), t_b=float("inf"),
+                        rising_max=RISING_MAX_TENURE_DEFAULT):
+    weights = weights or DEFAULT_WEIGHTS
     stars = [h for h in hcps if h.get("rising_star")]
     if not stars:
         return ""
@@ -419,13 +436,13 @@ def render_rising_stars(hcps, all_years):
                   f'<td><b>{_esc(h.get("name",""))}</b> <span class="pill rise">Rising</span>{breakout}<br>'
                   f'<span class="muted">{_esc(h.get("specialty",""))}</span></td>'
                   f'<td>{_esc(h.get("city",""))}</td><td>{tenure_txt}</td>'
-                  f'<td><b>{h.get("kol_score",0):.2f}</b></td>'
+                  f'<td><b>{h.get("kol_score",0):.2f}</b>{render_score_breakdown(h, weights)}</td>'
                   f'<td><b>{recent}</b> recent vs <b>{prior}</b> prior &middot; {ratio}</td>'
                   f'<td>{themes}</td></tr>')
     table = (f'<table><thead><tr><th>#</th><th>Name / Specialty</th><th>City</th><th>Tenure</th>'
              f'<th>Composite score</th><th>Recent vs prior (verified pubs)</th><th>Themes</th>'
              f'</tr></thead><tbody>{trows}</tbody></table>')
-    # Publication bars (below) — total vs indication-relevant per year, same style as KOL profiles.
+    # Publication bars — total vs indication-relevant per year, same style as KOL profiles.
     bar_cards = ""
     for h in stars:
         bars = render_year_bars(h.get("total_pub_by_year", {}), h.get("verified_pubmed_years", {}), all_years)
@@ -436,7 +453,19 @@ def render_rising_stars(hcps, all_years):
                       f'<span class="muted spark-label">pubs/yr — total vs relevant</span></div></div>')
     bars_block = (f'<h3>Publication trajectory — total vs indication-relevant</h3>'
                   f'<div class="rising-grid">{bar_cards}</div>') if bar_cards else ""
-    return f'<h2>Rising Stars</h2>{table}{bars_block}'
+    # Score development (separate section) — composite score over years with tier bands,
+    # the same chart used on KOL profile cards.
+    dev_cards = ""
+    for h in stars:
+        chart = render_score_dev_chart(h.get("score_trajectory", []), t_a, t_b, rising_max=rising_max)
+        if not chart:
+            continue
+        dev_cards += (f'<div class="rising-card"><b>{_esc(h.get("name",""))}</b>'
+                      f'<div style="margin:.4rem 0">{chart}'
+                      f'<span class="muted spark-label">score development</span></div></div>')
+    dev_block = (f'<h3>Score development — composite score over time</h3>'
+                 f'<div class="rising-grid">{dev_cards}</div>') if dev_cards else ""
+    return f'<h2>Rising Stars</h2>{table}{bars_block}{dev_block}'
 
 
 def render_established_new_callout(hcps):
@@ -544,15 +573,12 @@ _SENT_COLOR_KEY = {"positive": "pos", "negative": "neg"}
 
 
 def render_profiles(hcps, all_years, top_n=10, weights=None, tier_thresholds=None, rising_max=RISING_MAX_TENURE_DEFAULT):
-    weights = weights or DEFAULT_WEIGHTS
     t_a, t_b = tier_thresholds or (float("inf"), float("inf"))
     year_range = f"{all_years[0]}–{all_years[-1]}" if all_years else ""
     cards = ""
     for h in hcps[:top_n]:
         tier = h.get("tier") or "—"
         badge = f'<span class="pill {(h.get("tier") or "none").lower()}">{tier}</span>'
-        tc = tenure_chip(h)
-        stage = f' <span class="pill stage">{_esc(tc)}</span>' if tc else ""
         year_bars = render_year_bars(h.get("total_pub_by_year", {}), h.get("verified_pubmed_years", {}), all_years)
         dev_chart = render_score_dev_chart(h.get("score_trajectory", []), t_a, t_b, rising_max=rising_max)
         themes = "".join(f'<span class="tag">{_esc(t["term_en"])}</span>' for t in h.get("theme_labels", []))
@@ -577,10 +603,10 @@ def render_profiles(hcps, all_years, top_n=10, weights=None, tier_thresholds=Non
             f'<div style="display:flex;justify-content:space-between">'
             f'<div><b>{_esc(h.get("name",""))}</b><br>'
             f'<span class="muted">{_esc(h.get("specialty",""))} · {_esc(h.get("city",""))}</span></div>'
-            f'<div>{badge}{stage}</div></div>'
+            f'<div>{badge}</div></div>'
             f'{meta}'
             f'{charts}'
-            f'<div>{themes}</div>{quotes}{render_score_breakdown(h, weights)}</div>'
+            f'<div>{themes}</div>{quotes}</div>'
         )
     return f'<h2>Individual KOL Profiles — Top {top_n}</h2><div class="profile-grid">{cards}</div>'
 
@@ -841,7 +867,7 @@ def build_report_html(data, weights=None, as_of_year_cfg="latest", tier_pcts=Non
         "years since their first indication-relevant publication. Rising stars are a separate, "
         "mutually-exclusive bucket and are shown only in the Rising Stars tab, never here.")
     rising_section = _splice_explainer(
-        render_rising_stars(top, all_years)
+        render_rising_stars(top, all_years, weights=weights, t_a=t_a, t_b=t_b, rising_max=rising_max)
         or '<h2>Rising Stars</h2><p class="muted">No rising stars identified.</p>',
         "Rising stars are a separate bucket from KOLs — climbers, not yet arrived. An HCP is a "
         "rising star when their indication-relevant publication tenure is short (first on-topic "
@@ -916,7 +942,78 @@ def build_report_html(data, weights=None, as_of_year_cfg="latest", tier_pcts=Non
 </div></body></html>"""
 
 
-def write_excel(data: dict, path: str) -> None:
+WIKI_VERDICT_HEADERS = ["Rank", "Name", "Kind", "URL", "PMID", "Verdict",
+                        "Verified claims", "Statements", "Themes", "Sentiments"]
+_CELL_MAX = 1500  # keep joined statement cells readable, well under Excel's 32767 limit
+
+
+def _load_json_safe(path):
+    if not path:
+        return None
+    try:
+        with open(path, encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return None
+
+
+def build_wiki_verdict_rows(hcps, sources_data, wiki_data):
+    """One row per source handed to the LLM (from sources.json), joined to the verified
+    claims it produced (from wiki.json), keyed by source_id. Verdict is 'counted' when the
+    source yielded >=1 verified claim, else 'rejected'. Source full_text is never emitted."""
+    src_by_id = {h.get("s_customer_id"): h for h in (sources_data or {}).get("hcps", [])}
+    claims_by_hcp = {}
+    for wh in (wiki_data or {}).get("hcps", []):
+        by_src = {}
+        for c in wh.get("claims", []):
+            if not c.get("verified", True):   # wiki.json holds verified claims today; guard future output
+                continue
+            by_src.setdefault(str(c.get("source_id")), []).append(c)
+        claims_by_hcp[wh.get("s_customer_id")] = by_src
+    rows = []
+    for rank, h in enumerate(hcps, 1):
+        cid = h.get("s_customer_id")
+        sh = src_by_id.get(cid)
+        if not sh:
+            continue
+        by_src = claims_by_hcp.get(cid, {})
+        for s in (sh.get("web_sources", []) + sh.get("pubmed_sources", [])):
+            claims = by_src.get(str(s.get("source_id")), [])
+            statements = " | ".join(c.get("statement", "") for c in claims)[:_CELL_MAX]
+            themes = ", ".join(sorted({t for c in claims for t in (c.get("themes") or [])}))
+            sentiments = ", ".join(sorted({c.get("sentiment", "") for c in claims if c.get("sentiment")}))
+            rows.append([rank, h.get("name", ""), s.get("kind", ""), s.get("url", ""),
+                         s.get("pmid", ""), "counted" if claims else "rejected",
+                         len(claims), statements, themes, sentiments])
+    return rows
+
+
+SCORE_YEAR_HEADERS = ["Rank", "Name", "Year", "Composite score", "Relevance",
+                      "Reach", "Ratio", "Tenure", "Tier"]
+
+
+def build_score_year_rows(hcps):
+    """One row per (HCP, trajectory year) from score_trajectory. HCPs with no trajectory
+    contribute no rows. Mirrors the report's score-development chart data."""
+    rows = []
+    for rank, h in enumerate(hcps, 1):
+        for p in (h.get("score_trajectory") or []):
+            rows.append([rank, h.get("name", ""), p.get("year"),
+                         round(float(p.get("score", 0)), 4), p.get("relevance"),
+                         p.get("reach"), round(float(p.get("ratio", 0)), 4),
+                         p.get("tenure"), p.get("tier")])
+    return rows
+
+
+def _autosize(ws, headers, max_w=60):
+    from openpyxl.utils import get_column_letter
+    for ci in range(1, len(headers) + 1):
+        col = get_column_letter(ci)
+        best = max((len(str(c.value)) for c in ws[col] if c.value is not None), default=0)
+        ws.column_dimensions[col].width = min(max_w, best) + 2
+
+
+def write_excel(data: dict, path: str, sources_path: str = None, wiki_path: str = None) -> None:
     import openpyxl
     wb = openpyxl.Workbook(); ws = wb.active; ws.title = "KOLs"
     headers = ["Rank", "Name", "Specialty", "City", "Tier", "Rising star",
@@ -945,6 +1042,32 @@ def write_excel(data: dict, path: str) -> None:
                    ratio.get("ratio", 0),
                    h.get("total_pubmed_sources", 0), h.get("relevant_tenure", ""),
                    "yes" if h.get("is_kol") else "", "yes" if h.get("breakout") else ""])
+    ws.freeze_panes = "A2"
+    _autosize(ws, headers)
+
+    # Sheet 2 — LLM Wiki Verdicts: one row per source handed to the LLM, with the
+    # 'counted'/'rejected' verdict and the verified claim(s) it produced.
+    ws2 = wb.create_sheet("LLM Wiki Verdicts")
+    ws2.append(WIKI_VERDICT_HEADERS)
+    src_data = _load_json_safe(sources_path)
+    wiki_data = _load_json_safe(wiki_path)
+    if src_data is None or wiki_data is None:
+        note = ["", "sources.json / wiki.json not available — run stages 02–03"]
+        ws2.append(note + [""] * (len(WIKI_VERDICT_HEADERS) - len(note)))
+    else:
+        for r in build_wiki_verdict_rows(data["hcps"], src_data, wiki_data):
+            ws2.append(r)
+    ws2.freeze_panes = "A2"
+    _autosize(ws2, WIKI_VERDICT_HEADERS)
+
+    # Sheet 3 — Score by Year: composite reconstruction per year (score-dev chart data).
+    ws3 = wb.create_sheet("Score by Year")
+    ws3.append(SCORE_YEAR_HEADERS)
+    for r in build_score_year_rows(data["hcps"]):
+        ws3.append(r)
+    ws3.freeze_panes = "A2"
+    _autosize(ws3, SCORE_YEAR_HEADERS)
+
     wb.save(path)
 
 
@@ -969,7 +1092,9 @@ def main():
         f.write(build_report_html(data, weights=weights, as_of_year_cfg=as_of_year_cfg, tier_pcts=tier_pcts, rising_max=rising_max))
     log.info(f"Wrote {html_path}")
     xlsx_path = os.path.join(_DIR, "results", f"kol_report_{ts}.xlsx")
-    write_excel(data, xlsx_path)
+    write_excel(data, xlsx_path,
+                sources_path=os.path.join(_DIR, "data", "sources.json"),
+                wiki_path=os.path.join(_DIR, "data", "wiki.json"))
     log.info(f"Wrote {xlsx_path}")
 
 if __name__ == "__main__":

@@ -334,6 +334,13 @@ def build_comention_edges(hcps: list) -> list:
     return edges
 
 
+def trajectory_targets(hcps: list) -> list:
+    """HCPs that get a score-development trajectory: every KOL and every rising star
+    (not only the reported top-N), so the report's rising-star score charts and the
+    Excel per-year sheet have full coverage."""
+    return [h for h in hcps if h.get("is_kol") or h.get("rising_star")]
+
+
 def main():
     import argparse, snowflake.connector
     from pipeline_common import connect_snowflake, resolve_tables
@@ -342,7 +349,6 @@ def main():
     cfg = configparser.ConfigParser(); cfg.read(os.path.join(_DIR, "config.ini"))
     sf, sc = cfg["snowflake"], cfg["scoring"]
     fn = cfg["funnel"]
-    rep_n = int(cfg["report"]["top_n_report"])
     tb = resolve_tables(sf)
 
     out_path = os.path.join(_DIR, "data", "kol_final.json")
@@ -430,10 +436,10 @@ def main():
     span = int(data.get("pub_history_years") or int(fn["pub_history_years"]))
     weights = {"relevance": float(sc["weight_relevance"]), "reach": float(sc["weight_reach"]),
                "ratio": float(sc["weight_ratio"])}
-    # Trajectories only for the top-N KOLs shown in the report's KOL Profiles (hcps is
-    # already sorted by kol_score desc), so a KOL ranked just below a higher-scoring
-    # rising star still gets a chart. Rising stars use the per-year bars, not trajectories.
-    for h in [x for x in hcps if x.get("is_kol")][:rep_n]:
+    # Trajectories for every KOL and every rising star (see trajectory_targets): the
+    # report's rising-star Score-development charts and the Excel per-year sheet both
+    # need coverage beyond the reported top-N.
+    for h in trajectory_targets(hcps):
         h["score_trajectory"] = build_score_trajectory(
             h, anchor_year, span, int(fn["pubmed_window_years"]), ref_rel, ref_rch,
             weights, t_a, t_b, authors_by_pmid)

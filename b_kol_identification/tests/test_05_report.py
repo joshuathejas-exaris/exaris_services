@@ -79,6 +79,38 @@ def test_rising_stars_numbers_come_from_verified_pubmed_years_not_pub_by_year():
     assert "<b>3</b> recent" in html and "<b>0</b> prior" in html
     assert "100" not in html
 
+def _rising_hcp_with_traj():
+    return {"name": "Rita Stern", "specialty": "Innere Medizin", "city": "Kiel",
+            "rising_star": True, "relevant_tenure": 2, "kol_score": 0.71,
+            "verified_pubmed_years": {"2022": 2, "2023": 3},
+            "total_pub_by_year": {"2022": 3, "2023": 4},
+            "theme_labels": [{"term_key": "CF_OBESITY", "term_en": "Obesity", "count": 3}],
+            "norm_relevance": 0.8, "norm_reach": 0.5, "norm_ratio": 0.6,
+            "factor_contributions": {"relevance": 0.48, "reach": 0.12, "ratio": 0.09},
+            "reach": {"distinct_coauthors": 5, "distinct_affiliations": 4},
+            "ratio": {"ratio": 0.6, "denominator": 10},
+            "verified_web_count": 2, "verified_pubmed_count": 5,
+            "top_quotes": [{"quote": "q", "url": "http://x"}],
+            "score_trajectory": [{"year": 2021, "score": 0.3, "tier": "C", "tenure": 0},
+                                 {"year": 2022, "score": 0.5, "tier": "B", "tenure": 1},
+                                 {"year": 2023, "score": 0.71, "tier": "B", "tenure": 2}]}
+
+
+def test_rising_stars_has_score_development_section_with_chart():
+    html = mod.render_rising_stars([_rising_hcp_with_traj()], ["2021", "2022", "2023"],
+                                   weights={"relevance": 0.6, "reach": 0.25, "ratio": 0.15},
+                                   t_a=0.8, t_b=0.4)
+    assert "Score development" in html
+    assert "<polyline" in html            # the dev line chart rendered
+
+
+def test_rising_stars_row_has_score_breakdown():
+    html = mod.render_rising_stars([_rising_hcp_with_traj()], ["2021", "2022", "2023"],
+                                   weights={"relevance": 0.6, "reach": 0.25, "ratio": 0.15})
+    assert "score-breakdown" in html      # the <details> drill-down is present in the table
+    assert "how it was scored" in html
+
+
 def test_thematic_heatmap_uses_theme_labels_not_cf_by_term():
     html = mod.render_thematic_heatmap(DATA["hcps"], DATA["pca_terms"], top_n=20)
     assert "Anna Berg" in html and "Obesity" in html and "5" in html
@@ -269,6 +301,13 @@ def test_render_score_dev_chart_empty_for_short_series():
     assert mod.render_score_dev_chart([{"year": 2018, "score": 0.5, "tier": "C", "tenure": 1}], 0.8, 0.4) == ""
 
 
+def test_render_year_bars_has_axes_and_shared_width():
+    svg = mod.render_year_bars({"2017": 4, "2018": 6}, {"2017": 1, "2018": 3},
+                               ["2016", "2017", "2018"])
+    assert svg.count("<line") >= 2                       # x-axis + y-axis
+    assert f'width="{mod.PROFILE_CHART_W}"' in svg       # same width as the dev chart
+
+
 # ── Task 13: report wiring — total pubs, career labels, disjoint counts ────────
 
 def test_tenure_chip_shows_years_on_topic_or_empty():
@@ -325,3 +364,90 @@ def test_established_new_to_topic_detects_veteran_pivot():
            "relevant_tenure": 2}
     assert mod.established_new_to_topic(hcp) is True
     assert mod.established_new_to_topic({"total_pub_by_year": {"2017": 1}, "relevant_tenure": 2}) is False
+
+
+def test_profiles_omit_score_breakdown_dropdown():
+    html = mod.render_profiles(DATA["hcps"], ["2023", "2024"], top_n=10)
+    assert "score-breakdown" not in html
+    assert "how it was scored" not in html
+
+
+def test_profiles_omit_tenure_sticker():
+    h = dict(DATA["hcps"][0]); h["relevant_tenure"] = 7
+    html = mod.render_profiles([h], ["2023", "2024"], top_n=10)
+    assert 'pill stage' not in html
+
+
+# ── Task 5: Excel "LLM Wiki Verdicts" sheet ─────────────────────────────────────
+
+def test_wiki_verdict_rows_mark_counted_and_rejected():
+    hcps = [{"s_customer_id": "10", "name": "Anna Berg"}]
+    sources = {"hcps": [{"s_customer_id": "10",
+                         "web_sources": [{"source_id": "w1", "kind": "web", "url": "http://a"},
+                                         {"source_id": "w2", "kind": "web", "url": "http://b"}],
+                         "pubmed_sources": [{"source_id": "111", "kind": "pubmed",
+                                             "pmid": "111", "url": "http://pm/111",
+                                             "full_text": "SECRET BODY"}]}]}
+    wiki = {"hcps": [{"s_customer_id": "10",
+                      "claims": [{"source_id": "w1", "statement": "s1", "themes": ["Obesity"],
+                                  "sentiment": "positive", "verified": True},
+                                 {"source_id": "111", "statement": "s2", "themes": ["NASH"],
+                                  "sentiment": "neutral", "verified": True}]}]}
+    rows = mod.build_wiki_verdict_rows(hcps, sources, wiki)
+    hdr = mod.WIKI_VERDICT_HEADERS
+    verdicts = {r[hdr.index("URL")]: r[hdr.index("Verdict")] for r in rows}
+    assert verdicts["http://a"] == "counted"      # w1 produced a claim
+    assert verdicts["http://b"] == "rejected"      # w2 handed over, no claim
+    assert verdicts["http://pm/111"] == "counted"
+    assert all("SECRET BODY" not in str(c) for r in rows for c in r)   # full_text never leaks
+
+
+def test_write_excel_gates_verdict_rows_on_both_sources_and_wiki_loaded(tmp_path):
+    """Regression test: if sources.json loads but wiki.json is missing, show the
+    'not available' note instead of misleading 'rejected' verdicts for every source."""
+    import json, openpyxl
+    out = tmp_path / "k.xlsx"
+    # Write a real minimal sources.json with one HCP and one web source
+    sources_path = tmp_path / "sources.json"
+    sources_json = {
+        "hcps": [{
+            "s_customer_id": "10",
+            "web_sources": [{"source_id": "w1", "kind": "web", "url": "http://example.com"}],
+            "pubmed_sources": []
+        }]
+    }
+    with open(sources_path, "w", encoding="utf-8") as f:
+        json.dump(sources_json, f)
+
+    # Call write_excel with sources present but wiki missing (None path)
+    mod.write_excel(DATA, str(out), sources_path=str(sources_path), wiki_path=None)
+
+    # Load and inspect the Excel file
+    wb = openpyxl.load_workbook(out)
+    ws2 = wb["LLM Wiki Verdicts"]
+
+    # Should contain only the header row + one note row (no verdict rows)
+    assert ws2.max_row == 2, f"Expected 2 rows (header + note), got {ws2.max_row}"
+
+    # Check that the note text is present in row 2, column B
+    note_cell = ws2["B2"].value
+    assert "not available" in note_cell, f"Expected 'not available' in note, got: {note_cell}"
+
+    # No verdict column should contain "rejected" (that would be misleading)
+    verdict_col_idx = mod.WIKI_VERDICT_HEADERS.index("Verdict") + 1  # 1-indexed
+    for row_idx in range(2, ws2.max_row + 1):
+        cell = ws2.cell(row=row_idx, column=verdict_col_idx)
+        assert cell.value != "rejected", f"Row {row_idx} has misleading 'rejected' verdict when wiki was missing"
+
+
+def test_score_year_rows_one_per_trajectory_year():
+    hcps = [{"name": "Kai", "score_trajectory": [
+                {"year": 2022, "score": 0.5, "relevance": 10, "reach": 3, "ratio": 0.6, "tenure": 1, "tier": "B"},
+                {"year": 2023, "score": 0.7, "relevance": 12, "reach": 5, "ratio": 0.65, "tenure": 2, "tier": "A"}]},
+            {"name": "NoTraj", "score_trajectory": []}]
+    rows = mod.build_score_year_rows(hcps)
+    hdr = mod.SCORE_YEAR_HEADERS
+    assert len(rows) == 2                                  # NoTraj contributes nothing
+    assert [r[hdr.index("Year")] for r in rows] == [2022, 2023]
+    assert rows[1][hdr.index("Tier")] == "A"
+    assert rows[0][hdr.index("Relevance")] == 10
