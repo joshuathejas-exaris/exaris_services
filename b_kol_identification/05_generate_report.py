@@ -987,6 +987,23 @@ def build_wiki_verdict_rows(hcps, sources_data, wiki_data):
     return rows
 
 
+SCORE_YEAR_HEADERS = ["Rank", "Name", "Year", "Composite score", "Relevance",
+                      "Reach", "Ratio", "Tenure", "Tier"]
+
+
+def build_score_year_rows(hcps):
+    """One row per (HCP, trajectory year) from score_trajectory. HCPs with no trajectory
+    contribute no rows. Mirrors the report's score-development chart data."""
+    rows = []
+    for rank, h in enumerate(hcps, 1):
+        for p in (h.get("score_trajectory") or []):
+            rows.append([rank, h.get("name", ""), p.get("year"),
+                         round(float(p.get("score", 0)), 4), p.get("relevance"),
+                         p.get("reach"), round(float(p.get("ratio", 0)), 4),
+                         p.get("tenure"), p.get("tier")])
+    return rows
+
+
 def _autosize(ws, headers, max_w=60):
     from openpyxl.utils import get_column_letter
     for ci in range(1, len(headers) + 1):
@@ -1041,6 +1058,14 @@ def write_excel(data: dict, path: str, sources_path: str = None, wiki_path: str 
             ws2.append(r)
     ws2.freeze_panes = "A2"
     _autosize(ws2, WIKI_VERDICT_HEADERS)
+
+    # Sheet 3 — Score by Year: composite reconstruction per year (score-dev chart data).
+    ws3 = wb.create_sheet("Score by Year")
+    ws3.append(SCORE_YEAR_HEADERS)
+    for r in build_score_year_rows(data["hcps"]):
+        ws3.append(r)
+    ws3.freeze_panes = "A2"
+    _autosize(ws3, SCORE_YEAR_HEADERS)
 
     wb.save(path)
 

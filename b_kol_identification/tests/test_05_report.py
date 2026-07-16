@@ -438,3 +438,16 @@ def test_write_excel_gates_verdict_rows_on_both_sources_and_wiki_loaded(tmp_path
     for row_idx in range(2, ws2.max_row + 1):
         cell = ws2.cell(row=row_idx, column=verdict_col_idx)
         assert cell.value != "rejected", f"Row {row_idx} has misleading 'rejected' verdict when wiki was missing"
+
+
+def test_score_year_rows_one_per_trajectory_year():
+    hcps = [{"name": "Kai", "score_trajectory": [
+                {"year": 2022, "score": 0.5, "relevance": 10, "reach": 3, "ratio": 0.6, "tenure": 1, "tier": "B"},
+                {"year": 2023, "score": 0.7, "relevance": 12, "reach": 5, "ratio": 0.65, "tenure": 2, "tier": "A"}]},
+            {"name": "NoTraj", "score_trajectory": []}]
+    rows = mod.build_score_year_rows(hcps)
+    hdr = mod.SCORE_YEAR_HEADERS
+    assert len(rows) == 2                                  # NoTraj contributes nothing
+    assert [r[hdr.index("Year")] for r in rows] == [2022, 2023]
+    assert rows[1][hdr.index("Tier")] == "A"
+    assert rows[0][hdr.index("Relevance")] == 10
